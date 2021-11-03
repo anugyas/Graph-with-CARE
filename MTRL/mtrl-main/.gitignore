@@ -104,8 +104,8 @@ venv.bak/
 .mypy_cache/
 
 .idea/**
-config/*
-!config/sample_config.yaml
+#config/*
+#!config/sample_config.yaml
 data/*
 model/*
 logs/*
