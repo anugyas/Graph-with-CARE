@@ -18,6 +18,28 @@ import utils
 import dmc2gym
 import hydra
 
+import numpy as np
+import math, random
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.autograd as autograd
+import torch.nn.functional as F
+import copy
+import os, sys
+from torch.utils import tensorboard as tb
+
+GRID_DIM = 100  # TODO: Tune this
+NUM_TASKS = 5  # TODO: Tune this
+ADJ_THRESHOLD = GRID_DIM / 4  # TODO: Tune this
+USE_CUDA = torch.cuda.is_available()
+Variable = lambda *args, **kwargs: autograd.Variable(*args, **kwargs).cuda() if USE_CUDA else autograd.Variable(*args,
+                                                                                                                **kwargs)
+
+
+def is_legal(x, y):
+    return (x >= 0) & (x < GRID_DIM) & (y >= 0) & (y <= GRID_DIM)
+
 
 def make_env(cfg):
     """Helper function to create dm_control environment"""
@@ -39,6 +61,197 @@ def make_env(cfg):
     return env
 
 
+class GridWorldWithCare(object):
+
+    def __init__(self, n_tasks):
+        """
+        Initialize the gridworld
+
+        Params:
+        n_tasks:
+        """
+        super(GridWorldWithCare, self).__init__()
+        self.n_action = 4
+        self.n_tasks = n_tasks
+        # TODO: maybe include food as part of task, reach dest with > 0 food or something
+        self.tasks = [0] * self.n_tasks
+        self.agent = [-1, -1]
+        self.build_env()
+
+        self.dones = np.zeros(
+            self.n_tasks)  # Array to indicate whether each task is done or not -- used to calculate rewards
+        self.steps = 0
+        self.len_obs = (self.n_tasks + 1) * 2
+
+    def reset(self):
+        """
+        Reset the gridworld
+
+        Returns:
+        obs:
+        adj:
+        """
+
+        self.build_env()
+        self.dones = np.zeros(self.n_tasks)
+        self.steps = 0
+        return self.get_obs(), self.get_adj()
+
+    def build_env(self):
+        """
+        Build the gridworld
+        """
+        for i in range(self.n_tasks):
+            x = np.random.randint(0, GRID_DIM)
+            y = np.random.randint(0, GRID_DIM)
+            self.tasks[i] = [x, y]
+            print("TASK NUMBER ", i, " DEST: ", x, y)
+        self.agent[0] = np.random.randint(0, GRID_DIM)
+        self.agent[1] = np.random.randint(0, GRID_DIM)
+
+    def get_obs(self):
+        """
+        Get observations
+
+        Returns:
+        obs:
+        """
+        # TODO: change this for MTRL
+        obs = []
+
+        x_agent = self.agent[0]
+        y_agent = self.agent[1]
+
+        obs.append(x_agent / GRID_DIM)
+        obs.append(y_agent / GRID_DIM)
+
+        # 		for i in range(-1,2):
+        # 			for j in range(-1,2):
+        # 				obs.append(self.maze[x_agent+i][y_agent+j])
+
+        for i in range(self.n_tasks):
+            obs.append((self.tasks[i][0] - x_agent) / GRID_DIM)
+            obs.append((self.tasks[i][1] - y_agent) / GRID_DIM)
+
+        # TODO: 1. if we include maze state or not, and if we do, we would need to figure out
+        # how to effectively send that along with task destinations
+
+        # Idea: use distance between agent and task as obs
+
+        return obs
+
+    def get_adj(self):  # TODO: Change this to use task description encoding.
+        # In this case task description is the location of the destination.
+        """
+        Get adjacency matrix
+
+        Returns:
+        adj:
+        """
+        adj = np.zeros((self.n_tasks, self.n_tasks))
+
+        # Calculate adjacency regarding to the distances of the tasks respect to the agent
+        x_agent, y_agent = self.agent[0], self.agent[1]
+
+        # HARD ATTENTION
+        # Traverse through the tasks and calculate the Euclidean distance between them and the agent
+        #         for i in range(self.n_tasks):
+        #             x_task_i, y_task_i = self.tasks[i][0] - x_agent, self.tasks[i][1] - y_agent
+        #             for j in range(self.n_tasks):
+        #                 x_task_j, y_task_j = self.tasks[j][0] - x_agent, self.tasks[j][1] - y_agent
+        #                 task_dist = math.sqrt((x_task_j - x_task_i)**2 + (y_task_i - y_task_j)**2)
+        #                 if task_dist <= ADJ_THRESHOLD:
+        #                     adj[i,j] = 1
+        #                     adj[j,i] = 1
+
+        # SOFT ATTENTION
+        #         adj = np.ones((self.n_tasks, self.n_tasks)) # NOTE:
+        for i in range(self.n_tasks):
+            x_task_i, y_task_i = self.tasks[i][0] - x_agent, self.tasks[i][1] - y_agent
+            for j in range(self.n_tasks):
+                x_task_j, y_task_j = self.tasks[j][0] - x_agent, self.tasks[j][1] - y_agent
+                # Instead of having 1 or 0s, have their vectoral positions according to each other
+                task_dist = math.sqrt((x_task_j - x_task_i) ** 2 + (y_task_j - y_task_i) ** 2)
+
+                #                 print('x_task_i: {}, y_task_i: {}, x_task_j: {}, y_task_j: {}, task_dist: {}'.format(
+                #                         x_task_i, y_task_i, x_task_j, y_task_j, task_dist
+                #                 ))
+
+                # Set this distance / GRID_DIM
+                adj[i, j] = 1 - float(task_dist) / GRID_DIM  # Extract from 1 bc the closer the better
+                adj[j, i] = 1 - float(task_dist) / GRID_DIM
+
+        #         print("ADJACENCY: {}".format(adj))
+
+        #         print('x_agent: {}, y_agent: {}'.format(x_agent, y_agent))
+
+        return adj
+
+    def step(self, action):
+        """
+        Take one step in the gridworld according to the given actions
+
+        Params:
+        action:
+
+        Returns:
+        obs:
+        adj:
+        reward:
+        all_tasks_done:
+        """
+
+        # There are 4 different actions for the agent
+        # If there is any place to go in the maze then the agent will go
+        # 0: Move up, 1: Move down, 2: Move left, 3: Move right
+
+        self.steps += 1
+        x_agent, y_agent = self.agent[0], self.agent[1]
+        #         print("AGENT LOCATION: ", agent_x, agent_y)
+        #         print("ACTION: ", action)
+        if action == 0:  # Move up (decrease x by one)
+            if is_legal(x_agent - 1, y_agent):
+                # Change the agent and the maze
+                self.agent[0] -= 1
+
+        elif action == 1:  # Move down (increase x by one)
+            if is_legal(x_agent + 1, y_agent):
+                # Change the agent and the maze
+                self.agent[0] += 1
+
+        elif action == 2:  # Move left (decrease y by one)
+            if is_legal(x_agent, y_agent - 1):
+                # Change the agent and the maze
+                self.agent[1] -= 1
+
+        elif action == 3:  # Move right (increase y by one)
+            if is_legal(x_agent, y_agent + 1):
+                # Change the agent and the maze
+                self.agent[1] += 1
+
+        # Calculate the rewards for each task
+        rewards = [0] * self.n_tasks
+        total_reward = 0
+
+        # Check if you reached to any destinations here
+        new_agent_x, new_agent_y = self.agent[0], self.agent[1]
+        for i in range(self.n_tasks):
+            if self.tasks[i][0] == new_agent_x and self.tasks[i][1] == new_agent_y:
+                if self.dones[i] == 0:
+                    self.dones[i] = 1
+                    rewards[i] = 1
+                    total_reward += 1
+                    print("Task ", i, " completed at step ", self.steps)
+            else:
+                total_reward += 1.0 / float(
+                    (math.sqrt((self.tasks[i][0] - new_agent_x) ** 2 + (self.tasks[i][1] - new_agent_y) ** 2)))
+
+        # Only if all the tasks are done, then the episode is done
+        all_tasks_done = not (0 in self.dones)
+
+        return self.get_obs(), self.get_adj(), total_reward, all_tasks_done
+
+
 class Workspace(object):
     def __init__(self, cfg):
         self.work_dir = os.getcwd()
@@ -53,7 +266,8 @@ class Workspace(object):
 
         utils.set_seed_everywhere(cfg.seed)
         self.device = torch.device(cfg.device)
-        self.env = utils.make_env(cfg)
+        # self.env = utils.make_env(cfg)
+        self.env = GridWorldWithCare(NUM_TASKS)
 
         cfg.agent.params.obs_dim = self.env.observation_space.shape[0]
         cfg.agent.params.action_dim = self.env.action_space.shape[0]

@@ -51,3 +51,74 @@ class ReplayBuffer(object):
                                            device=self.device)
 
         return obses, actions, rewards, next_obses, not_dones, not_dones_no_max
+
+
+class ReplayBufferGCare(object):
+    """
+    Replay buffer for storing the agent's experiences
+    """
+
+    def __init__(self, buffer_size, obs_space, n_action, n_tasks):
+        """
+        Initialize the replay buffer
+
+        Params:
+        buffer_size:
+        obs_space:
+        n_action:
+        n_tasks:
+        """
+        self.buffer_size = buffer_size
+        self.n_tasks = n_tasks
+        self.pointer = 0
+        self.len = 0
+        self.actions = np.zeros((self.buffer_size, 1), dtype=np.int32)
+        self.rewards = np.zeros((self.buffer_size, 1))
+        self.dones = np.zeros((self.buffer_size, 1))
+        self.obs = np.zeros((self.buffer_size, n_tasks, obs_space))
+        self.next_obs = np.zeros((self.buffer_size, n_tasks, obs_space))
+        self.matrix = np.zeros((self.buffer_size, self.n_tasks, self.n_tasks))
+        self.next_matrix = np.zeros((self.buffer_size, self.n_tasks, self.n_tasks))
+
+    def getBatch(self, batch_size):
+        """
+        Sample a batch of random entries from the replay buffer
+
+        Params:
+        batch_size:
+
+        Returns:
+        obs:
+        action:
+        reward
+        next_obs:
+        matrix:
+        next_matrix:
+        done:
+        """
+        index = np.random.choice(self.len, batch_size, replace=False)
+        return self.obs[index], self.actions[index], self.rewards[index], self.next_obs[index], self.matrix[index], \
+               self.next_matrix[index], self.dones[index]
+
+    def add(self, obs, action, reward, next_obs, matrix, next_matrix, done):
+        """
+        Add to the replay buffer
+
+        Params:
+        obs:
+        action:
+        reward:
+        next_obs:
+        matrix:
+        next_matrix:
+        done:
+        """
+        self.obs[self.pointer] = obs
+        self.actions[self.pointer] = action
+        self.rewards[self.pointer] = reward
+        self.next_obs[self.pointer] = next_obs
+        self.matrix[self.pointer] = matrix
+        self.next_matrix[self.pointer] = next_matrix
+        self.dones[self.pointer] = done
+        self.pointer = (self.pointer + 1) % self.buffer_size
+        self.len = min(self.len + 1, self.buffer_size)
