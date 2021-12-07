@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import math
 
 from agent import Agent
+from agent.critic import DoubleQCritic
+from agent.actor import DiagGaussianActor
 import utils
 
 import hydra
@@ -20,6 +22,8 @@ class SACAgent(Agent):
         super().__init__()
 
         self.n_tasks = n_tasks
+        self.obs_dim = obs_dim
+        self.action_dim = action_dim
         self.action_range = action_range
         self.device = torch.device(device)
         self.discount = discount
@@ -29,12 +33,31 @@ class SACAgent(Agent):
         self.batch_size = batch_size
         self.learnable_temperature = learnable_temperature
 
-        self.critic = hydra.utils.instantiate(critic_cfg).to(self.device)
-        self.critic_target = hydra.utils.instantiate(critic_cfg).to(
-            self.device)
+        self.critic = DoubleQCritic(n_tasks=self.n_tasks,
+                                    obs_dim=self.obs_dim,
+                                    action_dim=self.action_dim,
+                                    hidden_dim=1024,
+                                    hidden_depth=2)
+
+        self.critic = self.critic.to(self.device)
+
+        self.critic_target = DoubleQCritic(n_tasks=self.n_tasks,
+                                           obs_dim=self.obs_dim,
+                                           action_dim=self.action_dim,
+                                           hidden_dim=1024,
+                                           hidden_depth=2)
+        
+        self.critic_target = self.critic_target.to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
-        self.actor = hydra.utils.instantiate(actor_cfg).to(self.device)
+        self.actor = DiagGaussianActor(n_tasks=self.n_tasks,
+                                       obs_dim=self.obs_dim,
+                                       action_dim=self.action_dim,
+                                       hidden_dim=1024,
+                                       hidden_depth=2,
+                                       log_std_bounds=[-5, 2])
+
+        self.actor = self.actor.to(self.device)
 
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
         self.log_alpha.requires_grad = True

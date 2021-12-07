@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from re import M
 import numpy as np
 import torch
 import torch.nn as nn
@@ -27,7 +28,9 @@ import torch.autograd as autograd
 import torch.nn.functional as F
 import copy
 import os, sys
+import yaml
 from torch.utils import tensorboard as tb
+from agent.sac import SACAgent
 
 # hidden_dim = 64
 # max_step = 5000 #originally 500
@@ -55,21 +58,43 @@ class Workspace(object):
         print(f'workspace: {self.work_dir}')
 
         self.cfg = cfg
-
+        # print("CFGAAAAAAAAA:", cfg)
+        # print('cfg: {}'.format(cfg))
         self.logger = Logger(self.work_dir,
-                             save_tb=cfg.log_save_tb,
-                             log_frequency=cfg.log_frequency,
-                             agent=cfg.agent.name)
+                             save_tb=self.cfg['log_save_tb'],
+                             log_frequency=self.cfg['log_frequency'],
+                             agent=self.cfg['defaults'][0]['agent'])
 
-        utils.set_seed_everywhere(cfg.seed)
-        self.device = torch.device(cfg.device)
+        utils.set_seed_everywhere(self.cfg['seed'])
+        self.device = torch.device(self.cfg['device'])
         # self.env = utils.make_env(cfg)
-        self.env = GridWorldWithCare(GRID_DIM, NUM_TASKS)
+        self.env = utils.GridWorldWithCare(GRID_DIM, NUM_TASKS)
 
-        cfg.agent.params.obs_dim = self.env.len_obs
-        cfg.agent.params.action_dim = self.env.n_action
-        cfg.agent.params.action_range = [0,3]
-        self.agent = hydra.utils.instantiate(cfg.agent)
+        # cfg.agent.params.obs_dim = self.env.len_obs
+        # cfg.agent.params.action_dim = self.env.n_action
+        # cfg.agent.params.action_range = [0,3]
+        # self.agent = hydra.utils.instantiate(self.cfg.agent)
+
+        self.agent = SACAgent(obs_dim=self.env.len_obs,
+                              action_dim=self.env.n_action,
+                              action_range=[0,3],
+                              device='cuda',
+                              critic_cfg="TODO",
+                              actor_cfg="TODO",
+                              discount=0.99,
+                              init_temperature=0.1,
+                              alpha_lr=1e-4,
+                              alpha_betas=[0.9, 0.999],
+                              actor_lr=1e-4,
+                              actor_betas=[0.9, 0.999],
+                              actor_update_frequency=1,
+                              critic_lr=1e-4,
+                              critic_betas=[0.9, 0.999],
+                              critic_tau=0.005,
+                              critic_target_update_frequency=2,
+                              batch_size=1024,
+                              learnable_temperature=True,
+                              n_tasks=NUM_TASKS)
 
         self.replay_buffer = ReplayBufferGCare(buffer_size, self.env.len_obs, self.env.n_action, self.env.n_tasks)
 
@@ -79,7 +104,7 @@ class Workspace(object):
 
     def evaluate(self):
         average_episode_reward = 0
-        for episode in range(self.cfg.num_eval_episodes):
+        for episode in range(self.cfg["num_eval_episodes"]):
             obs, adj = self.env.reset()
 #             self.agent.reset()
 #             self.video_recorder.init(enabled=(episode == 0))
@@ -97,7 +122,7 @@ class Workspace(object):
                 episode_reward += reward
             average_episode_reward += episode_reward
 #             self.video_recorder.save(f'{self.step}.mp4')
-        average_episode_reward /= self.cfg.num_eval_episodes
+        average_episode_reward /= self.cfg["num_eval_episodes"]
         self.logger.log('eval/episode_reward', average_episode_reward,
                         self.step)
         self.logger.dump(self.step)
@@ -105,17 +130,18 @@ class Workspace(object):
     def run(self):
         episode, episode_reward, done = 0, 0, True
         start_time = time.time()
-        while self.step < self.cfg.num_train_steps:
+        print(type(self.cfg["num_train_steps"]))
+        while self.step < self.cfg["num_train_steps"]:
             if done:
                 if self.step > 0:
                     self.logger.log('train/duration',
                                     time.time() - start_time, self.step)
                     start_time = time.time()
                     self.logger.dump(
-                        self.step, save=(self.step > self.cfg.num_seed_steps))
+                        self.step, save=(self.step > self.cfg["num_seed_steps"]))
 
                 # evaluate agent periodically
-                if self.step > 0 and self.step % self.cfg.eval_frequency == 0:
+                if self.step > 0 and self.step % self.cfg["eval_frequency"] == 0:
                     self.logger.log('eval/episode', episode, self.step)
                     self.evaluate()
 
@@ -133,7 +159,7 @@ class Workspace(object):
                 self.logger.log('train/episode', episode, self.step)
 
             # sample action for data collection
-            if self.step < self.cfg.num_seed_steps:
+            if self.step < self.cfg["num_seed_steps"]:
                 action = np.random.randint(self.agent.n_tasks)
             else:
                 with utils.eval_mode(self.agent):
@@ -143,7 +169,7 @@ class Workspace(object):
                     action = self.agent.act(obs, adj, sample=True)
 
             # run training update
-            if self.step >= self.cfg.num_seed_steps:
+            if self.step >= self.cfg["num_seed_steps"]:
                 self.agent.update(self.replay_buffer, self.logger, self.step)
 
             next_obs, next_adj, reward, done = self.env.step(action)
@@ -161,8 +187,11 @@ class Workspace(object):
             self.step += 1
 
 
-@hydra.main(config_path='config/train.yaml', strict=True)
-def main(cfg):
+# @hydra.main(config_path="/scratch/ig2283/Graph-with-CARE/SAC/config", config_name="train")
+def main():
+    with open("./config/train.yaml") as cfg_file:
+        cfg = yaml.load(cfg_file, Loader=yaml.FullLoader)
+        # print(cfg)
     workspace = Workspace(cfg)
     workspace.run()
 
