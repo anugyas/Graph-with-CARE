@@ -16,9 +16,10 @@ class SACAgent(Agent):
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, learnable_temperature):
+                 batch_size, learnable_temperature, n_tasks):
         super().__init__()
 
+        self.n_tasks = n_tasks
         self.action_range = action_range
         self.device = torch.device(device)
         self.discount = discount

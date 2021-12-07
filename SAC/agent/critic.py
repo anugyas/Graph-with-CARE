@@ -8,11 +8,12 @@ import utils
 
 class DoubleQCritic(nn.Module):
     """Critic network, employes double Q-learning."""
-    def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth):
+    def __init__(self, n_tasks, obs_dim, action_dim, hidden_dim, hidden_depth):
         super().__init__()
 
-        self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
-        self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+        self.n_tasks = n_tasks
+        self.Q1 = utils.MTRL_DGN(self.n_tasks, obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+        self.Q2 = utils.MTRL_DGN(self.n_tasks, obs_dim + action_dim, hidden_dim, 1, hidden_depth)
 
         self.outputs = dict()
         self.apply(utils.weight_init)
