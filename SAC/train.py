@@ -37,15 +37,15 @@ from agent.sac import SACAgent
 # GAMMA = 0.99
 # n_episode = 1000 #originally 800
 # i_episode = 0
-buffer_size = 65000 #change back to 65000
+buffer_size = 100000 #change back to 65000
 # batch_size = 64 #change back to 64
 # n_epoch = 100 #orginally 25
 # epsilon = 0.7 #originally 0.9
 # score = 0
 # tau = 0.98
 
-GRID_DIM = 100  # TODO: Tune this
-NUM_TASKS = 5  # TODO: Tune this
+GRID_DIM = 50  # TODO: Tune this
+NUM_TASKS = 2  # TODO: Tune this
 EVAL_STEPS = 10000
 # ADJ_THRESHOLD = GRID_DIM / 4  # TODO: Tune this
 # USE_CUDA = torch.cuda.is_available()
@@ -130,15 +130,14 @@ class Workspace(object):
     def run(self):
         episode, episode_reward, done = 0, 0, True
         start_time = time.time()
-        print(type(self.cfg["num_train_steps"]))
-        while self.step < self.cfg["num_train_steps"]:
+        while self.step < float(self.cfg["num_train_steps"]):
             if done:
                 if self.step > 0:
                     self.logger.log('train/duration',
                                     time.time() - start_time, self.step)
                     start_time = time.time()
                     self.logger.dump(
-                        self.step, save=(self.step > self.cfg["num_seed_steps"]))
+                        self.step, save=(self.step > float(self.cfg["num_seed_steps"])))
 
                 # evaluate agent periodically
                 if self.step > 0 and self.step % self.cfg["eval_frequency"] == 0:

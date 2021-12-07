@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch import distributions as pyd
 import torch.nn.functional as F
-import gym
+# import gym
 import os
 from collections import deque
 import random
@@ -91,9 +91,6 @@ def weight_init(m):
         if hasattr(m.bias, 'data'):
             m.bias.data.fill_(0.0)
 
-def is_legal(x, y):
-    return (x >= 0) & (x < GRID_DIM) & (y >= 0) & (y <= GRID_DIM)
-
 class MTRL_ATT(nn.Module):
     """
     """
@@ -167,6 +164,10 @@ class MTRL_DGN(nn.Module):
                  output_mod=None):
         super(MTRL_DGN, self).__init__()
 
+#         print('num_inputs: {} output_dim: {}, hidden_dim: {}'.format(
+#             num_inputs, output_dim, hidden_dim
+#         ))
+        
         self.encoder = MTRL_Encoder(num_inputs,hidden_dim)
         # TODO: Try both single encoder and mix of encoder settings
         # Will remain same for MTRL
@@ -185,9 +186,11 @@ class MTRL_DGN(nn.Module):
         h4 = torch.cat((h2,h3),dim=2)
         # q = self.q_net(h4)
         op = self.mlp(h4)
+        
+#         print("HELLO 1: ", op.shape)
         # Note: No concatenation done. Output of last attention head used directly
         # Note: 2 attention heads used
-        return q 
+        return op
 
 class MLP(nn.Module):
     def __init__(self,
@@ -273,6 +276,9 @@ class GridWorldWithCare(object):
             print("TASK NUMBER ", i, " DEST: ", x, y)
         self.agent[0] = np.random.randint(0, self.grid_dim)
         self.agent[1] = np.random.randint(0, self.grid_dim)
+    
+    def is_legal(self, x, y):
+        return (x >= 0) & (x < self.grid_dim) & (y >= 0) & (y <= self.grid_dim)
 
     def get_obs(self):
         """
@@ -379,22 +385,22 @@ class GridWorldWithCare(object):
 #         print("AGENT LOCATION: ", agent_x, agent_y)
 #         print("ACTION: ", action)
         if action == 0: # Move up (decrease x by one)
-            if is_legal(x_agent-1, y_agent):
+            if self.is_legal(x_agent-1, y_agent):
                 # Change the agent and the maze
                 self.agent[0] -= 1
 
         elif action == 1: # Move down (increase x by one)
-            if is_legal(x_agent+1, y_agent):
+            if self.is_legal(x_agent+1, y_agent):
                 # Change the agent and the maze
                 self.agent[0] += 1
 
         elif action == 2: # Move left (decrease y by one)
-            if is_legal(x_agent, y_agent-1):
+            if self.is_legal(x_agent, y_agent-1):
                 # Change the agent and the maze
                 self.agent[1] -= 1
 
         elif action == 3: # Move right (increase y by one)
-            if is_legal(x_agent, y_agent+1):
+            if self.is_legal(x_agent, y_agent+1):
                 # Change the agent and the maze
                 self.agent[1] += 1
                 
