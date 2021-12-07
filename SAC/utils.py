@@ -186,11 +186,15 @@ class MTRL_DGN(nn.Module):
         h4 = torch.cat((h2,h3),dim=2)
         # q = self.q_net(h4)
         op = self.mlp(h4)
-        
-#         print("HELLO 1: ", op.shape)
         # Note: No concatenation done. Output of last attention head used directly
         # Note: 2 attention heads used
         return op
+    
+    def __iter__(self):
+        return iter(self._modules.values())
+    
+    def __len__(self) -> int:
+        return len(self._modules)
 
 class MLP(nn.Module):
     def __init__(self,

@@ -44,7 +44,7 @@ buffer_size = 100000 #change back to 65000
 # score = 0
 # tau = 0.98
 
-GRID_DIM = 50  # TODO: Tune this
+GRID_DIM = 10  # TODO: Tune this
 NUM_TASKS = 2  # TODO: Tune this
 EVAL_STEPS = 10000
 # ADJ_THRESHOLD = GRID_DIM / 4  # TODO: Tune this
@@ -159,7 +159,7 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg["num_seed_steps"]:
-                action = np.random.randint(self.agent.n_tasks)
+                action = np.random.rand(self.env.n_action)
             else:
                 with utils.eval_mode(self.agent):
                     obs = np.resize(obs, (self.agent.n_tasks, self.env.len_obs))
@@ -171,7 +171,10 @@ class Workspace(object):
             if self.step >= self.cfg["num_seed_steps"]:
                 self.agent.update(self.replay_buffer, self.logger, self.step)
 
-            next_obs, next_adj, reward, done = self.env.step(action)
+            
+            # Take argmax as the action to apply
+            action_to_apply = np.argmax(action, axis=0)
+            next_obs, next_adj, reward, done = self.env.step(action_to_apply)
 
             # allow infinite bootstrap
             done = float(done)

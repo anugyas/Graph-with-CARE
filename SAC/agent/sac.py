@@ -92,47 +92,35 @@ class SACAgent(Agent):
     def act(self, obs, adj, sample=False):
         obs = torch.FloatTensor(obs).to(self.device)
         adj = torch.FloatTensor(adj).to(self.device)
-#         obs = obs.unsqueeze(0)
         dist = self.actor(obs, adj)
-        
-#         print("HELLO 4: ", dist.shape)
-        
         action = dist.sample() if sample else dist.mean
-        
-#         print("HELLO 5: ", action.shape)
-        
-        action = action.clamp(*self.action_range)
-        
-#         print("HELLO 6: ", action.ndim)
-        
-        action = action[:,0,:]
+        action = action.clamp(*self.action_range) # Shape: (1,2,4)
+        action = action[:,0,:] # # Shape: (1,4)
         assert action.ndim == 2 and action.shape[0] == 1
         return utils.to_np(action[0])
 
     def update_critic(self, obs, action, reward, next_obs, adj, next_adj, done, logger,
                       step):
-        
-        next_obs = np.resize(next_obs, (self.n_tasks, self.obs_dim))
-        next_obs = np.array([next_obs])
-        next_adj = np.array([next_adj])
         next_obs = torch.FloatTensor(next_obs).to(self.device)
         next_adj = torch.FloatTensor(next_adj).to(self.device)
+        done = torch.FloatTensor(done).to(self.device)
         dist = self.actor(next_obs, next_adj)
         next_action = dist.rsample()
-        next_action = next_action[:,0,:]
         log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
         target_Q1, target_Q2 = self.critic_target(next_obs, next_action, next_adj)
         target_V = torch.min(target_Q1,
                              target_Q2) - self.alpha.detach() * log_prob
+        reward = np.resize(reward, (self.batch_size, self.n_tasks, 1))
+        reward = torch.FloatTensor(reward).to(self.device)
+        done.resize_(reward.shape[0], self.n_tasks, 1)
         target_Q = reward + ((1-done) * self.discount * target_V)
         target_Q = target_Q.detach()
 
         # get current Q estimates
-        obs = np.resize(obs, (self.n_tasks, self.obs_dim))
-        obs = np.array([obs])
-        adj = np.array([adj])
         obs = torch.FloatTensor(obs).to(self.device)
         adj = torch.FloatTensor(adj).to(self.device)
+        action = np.resize(action, (self.batch_size, self.n_tasks, self.action_dim))
+        action = torch.FloatTensor(action).to(self.device)
         current_Q1, current_Q2 = self.critic(obs, action, adj)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q)
@@ -145,15 +133,11 @@ class SACAgent(Agent):
 
         self.critic.log(logger, step)
 
-    def update_actor_and_alpha(self, obs, logger, step):
-        obs = np.resize(obs, (self.n_tasks, self.obs_dim))
-        obs = np.array([obs])
-        adj = np.array([adj])
+    def update_actor_and_alpha(self, obs, adj, logger, step):
         obs = torch.FloatTensor(obs).to(self.device)
         adj = torch.FloatTensor(adj).to(self.device)
         dist = self.actor(obs, adj)
         action = dist.rsample()
-        action = action[:,0,:]
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
         actor_Q1, actor_Q2 = self.critic(obs, action, adj)
 
@@ -183,13 +167,12 @@ class SACAgent(Agent):
     def update(self, replay_buffer, logger, step):
         obs, action, reward, next_obs, adj, next_adj, done = replay_buffer.get_batch(
             self.batch_size)
-
         logger.log('train/batch_reward', reward.mean(), step)
 
         self.update_critic(obs, action, reward, next_obs, adj, next_adj, done, logger, step)
 
         if step % self.actor_update_frequency == 0:
-            self.update_actor_and_alpha(obs, logger, step)
+            self.update_actor_and_alpha(obs, adj, logger, step)
 
         if step % self.critic_target_update_frequency == 0:
             utils.soft_update_params(self.critic, self.critic_target,

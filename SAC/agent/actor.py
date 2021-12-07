@@ -74,8 +74,6 @@ class DiagGaussianActor(nn.Module):
 
     def forward(self, obs, adj):
         mu, log_std = self.trunk(obs, adj).chunk(2, dim=-1)
-        
-        print("HELLO 2: ", mu.shape, log_std.shape)
 
         # constrain log_std inside [log_std_min, log_std_max]
         log_std = torch.tanh(log_std)
@@ -89,8 +87,6 @@ class DiagGaussianActor(nn.Module):
         self.outputs['std'] = std
 
         dist = SquashedNormal(mu, std)
-        
-#         print("HELLO 3: ", dist.sample().shape)
         
         return dist
 

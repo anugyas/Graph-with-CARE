@@ -72,7 +72,7 @@ class ReplayBufferGCare(object):
         self.n_tasks = n_tasks
         self.pointer = 0
         self.len = 0
-        self.actions = np.zeros((self.buffer_size, 1), dtype=np.int32)
+        self.actions = np.zeros((self.buffer_size, n_action), dtype=np.int32)
         self.rewards = np.zeros((self.buffer_size, 1))
         self.dones = np.zeros((self.buffer_size, 1))
         self.obs = np.zeros((self.buffer_size, n_tasks, obs_space))
