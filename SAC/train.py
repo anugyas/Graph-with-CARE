@@ -43,6 +43,7 @@ buffer_size = 65000 #change back to 65000
 
 GRID_DIM = 100  # TODO: Tune this
 NUM_TASKS = 5  # TODO: Tune this
+EVAL_STEPS = 10000
 # ADJ_THRESHOLD = GRID_DIM / 4  # TODO: Tune this
 # USE_CUDA = torch.cuda.is_available()
 # Variable = lambda *args, **kwargs: autograd.Variable(*args, **kwargs).cuda() if USE_CUDA else autograd.Variable(*args,
@@ -79,20 +80,23 @@ class Workspace(object):
     def evaluate(self):
         average_episode_reward = 0
         for episode in range(self.cfg.num_eval_episodes):
-            obs = self.env.reset()
-            self.agent.reset()
-            self.video_recorder.init(enabled=(episode == 0))
-            done = False
+            obs, adj = self.env.reset()
+#             self.agent.reset()
+#             self.video_recorder.init(enabled=(episode == 0))
+#             done = False
+            eval_step = 0
             episode_reward = 0
-            while not done:
+            while eval_step < EVAL_STEPS:
+                obs = np.resize(obs, (self.agent.n_tasks, self.env.len_obs))
+                obs = np.array([obs])
+                adj = np.array([adj])
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False)
-                obs, reward, done, _ = self.env.step(action)
-                self.video_recorder.record(self.env)
+                    action = self.agent.act(obs, adj, sample = False)
+                obs, adj, reward, _ = self.env.step(action)
+#                 self.video_recorder.record(self.env)
                 episode_reward += reward
-
             average_episode_reward += episode_reward
-            self.video_recorder.save(f'{self.step}.mp4')
+#             self.video_recorder.save(f'{self.step}.mp4')
         average_episode_reward /= self.cfg.num_eval_episodes
         self.logger.log('eval/episode_reward', average_episode_reward,
                         self.step)
@@ -118,8 +122,9 @@ class Workspace(object):
                 self.logger.log('train/episode_reward', episode_reward,
                                 self.step)
 
-                obs = self.env.reset()
-                self.agent.reset()
+                obs, adj = self.env.reset()
+                
+#                 self.agent.reset()
                 done = False
                 episode_reward = 0
                 episode_step = 0
@@ -129,26 +134,29 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg.num_seed_steps:
-                action = self.env.action_space.sample()
+                action = np.random.randint(self.agent.n_tasks)
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True)
+                    obs = np.resize(obs, (self.agent.n_tasks, self.env.len_obs))
+                    obs = np.array([obs])
+                    adj = np.array([adj])
+                    action = self.agent.act(obs, adj, sample=True)
 
             # run training update
             if self.step >= self.cfg.num_seed_steps:
                 self.agent.update(self.replay_buffer, self.logger, self.step)
 
-            next_obs, reward, done, _ = self.env.step(action)
+            next_obs, next_adj, reward, done = self.env.step(action)
 
             # allow infinite bootstrap
             done = float(done)
-            done_no_max = 0 if episode_step + 1 == self.env._max_episode_steps else done
+#             done_no_max = 0 if episode_step + 1 == self.env._max_episode_steps else done #?
             episode_reward += reward
 
-            self.replay_buffer.add(obs, action, reward, next_obs, done,
-                                   done_no_max)
+            self.replay_buffer.add(obs, action, reward, next_obs, adj, next_adj, done)
 
             obs = next_obs
+            adj = next_adj
             episode_step += 1
             self.step += 1
 

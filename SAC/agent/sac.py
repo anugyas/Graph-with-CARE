@@ -66,28 +66,29 @@ class SACAgent(Agent):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def act(self, obs, sample=False):
+    def act(self, obs, adj, sample=False):
         obs = torch.FloatTensor(obs).to(self.device)
-        obs = obs.unsqueeze(0)
-        dist = self.actor(obs)
+        adj = torch.FloatTensor(adj).to(self.device)
+#         obs = obs.unsqueeze(0)
+        dist = self.actor(obs, adj)
         action = dist.sample() if sample else dist.mean
         action = action.clamp(*self.action_range)
         assert action.ndim == 2 and action.shape[0] == 1
         return utils.to_np(action[0])
 
-    def update_critic(self, obs, action, reward, next_obs, not_done, logger,
+    def update_critic(self, obs, action, reward, next_obs, adj, next_adj, done, logger,
                       step):
-        dist = self.actor(next_obs)
+        dist = self.actor(next_obs, next_adj)
         next_action = dist.rsample()
         log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
-        target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
+        target_Q1, target_Q2 = self.critic_target(next_obs, next_action, next_adj)
         target_V = torch.min(target_Q1,
                              target_Q2) - self.alpha.detach() * log_prob
-        target_Q = reward + (not_done * self.discount * target_V)
+        target_Q = reward + ((1-done) * self.discount * target_V)
         target_Q = target_Q.detach()
 
         # get current Q estimates
-        current_Q1, current_Q2 = self.critic(obs, action)
+        current_Q1, current_Q2 = self.critic(obs, action, adj)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q)
         logger.log('train_critic/loss', critic_loss, step)
@@ -100,10 +101,10 @@ class SACAgent(Agent):
         self.critic.log(logger, step)
 
     def update_actor_and_alpha(self, obs, logger, step):
-        dist = self.actor(obs)
+        dist = self.actor(obs, adj)
         action = dist.rsample()
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        actor_Q1, actor_Q2 = self.critic(obs, action)
+        actor_Q1, actor_Q2 = self.critic(obs, action, adj)
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
@@ -129,13 +130,12 @@ class SACAgent(Agent):
             self.log_alpha_optimizer.step()
 
     def update(self, replay_buffer, logger, step):
-        obs, action, reward, next_obs, not_done, not_done_no_max = replay_buffer.sample(
+        obs, action, reward, next_obs, adj, next_adj, done = replay_buffer.get_batch(
             self.batch_size)
 
         logger.log('train/batch_reward', reward.mean(), step)
 
-        self.update_critic(obs, action, reward, next_obs, not_done_no_max,
-                           logger, step)
+        self.update_critic(obs, action, reward, next_obs, adj, next_adj, done, logger, step)
 
         if step % self.actor_update_frequency == 0:
             self.update_actor_and_alpha(obs, logger, step)

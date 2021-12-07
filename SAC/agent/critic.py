@@ -18,12 +18,12 @@ class DoubleQCritic(nn.Module):
         self.outputs = dict()
         self.apply(utils.weight_init)
 
-    def forward(self, obs, action):
+    def forward(self, obs, action, adj):
         assert obs.size(0) == action.size(0)
 
         obs_action = torch.cat([obs, action], dim=-1)
-        q1 = self.Q1(obs_action)
-        q2 = self.Q2(obs_action)
+        q1 = self.Q1(obs_action, adj)
+        q2 = self.Q2(obs_action, adj)
 
         self.outputs['q1'] = q1
         self.outputs['q2'] = q2

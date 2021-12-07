@@ -80,7 +80,7 @@ class ReplayBufferGCare(object):
         self.matrix = np.zeros((self.buffer_size, self.n_tasks, self.n_tasks))
         self.next_matrix = np.zeros((self.buffer_size, self.n_tasks, self.n_tasks))
 
-    def getBatch(self, batch_size):
+    def get_batch(self, batch_size):
         """
         Sample a batch of random entries from the replay buffer
 

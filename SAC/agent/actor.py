@@ -63,14 +63,17 @@ class DiagGaussianActor(nn.Module):
 
         self.n_tasks = n_tasks
         self.log_std_bounds = log_std_bounds
-        self.trunk = utils.MTRL_DGN(self.n_tasks, obs_dim, hidden_dim, 2 * action_dim,
-                               hidden_depth)
+        self.trunk = utils.MTRL_DGN(self.n_tasks, 
+                                    obs_dim, 
+                                    hidden_dim, 
+                                    2 * action_dim,
+                                    hidden_depth)
 
         self.outputs = dict()
         self.apply(utils.weight_init)
 
-    def forward(self, obs):
-        mu, log_std = self.trunk(obs).chunk(2, dim=-1)
+    def forward(self, obs, adj):
+        mu, log_std = self.trunk(obs, adj).chunk(2, dim=-1)
 
         # constrain log_std inside [log_std_min, log_std_max]
         log_std = torch.tanh(log_std)
