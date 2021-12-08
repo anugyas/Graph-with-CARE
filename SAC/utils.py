@@ -94,7 +94,7 @@ class MTRL_Encoder(nn.Module): # TODO: Need to make it a CNN for higher dim obs 
 
 
     def forward(self, x):
-        embedding = F.tanh(self.fc(x))
+        embedding = torch.tanh(self.fc(x))
         return embedding
 
 class MTRL_AttModel(nn.Module):
@@ -108,10 +108,10 @@ class MTRL_AttModel(nn.Module):
         self.fcout = nn.Linear(hidden_dim, dout)
 
     def forward(self, x, mask):
-        v = F.tanh(self.fcv(x))
-        q = F.tanh(self.fcq(x))
-        k = F.tanh(self.fck(x)).permute(0,2,1)
-        att = F.softmax(torch.mul(torch.bmm(q,k), mask) - 9e15*(1 - mask),dim=2)
+        v = torch.tanh(self.fcv(x))
+        q = torch.tanh(self.fcq(x))
+        k = torch.tanh(self.fck(x)).permute(0,2,1)
+        att = F.softmax(torch.mul(torch.bmm(q,k), mask) - 9e15*(1 - mask), dim=2)
         # Note: Order of applying adj matrix is different than that in paper. Don't get confused!
         out = torch.bmm(att,v)
         return out

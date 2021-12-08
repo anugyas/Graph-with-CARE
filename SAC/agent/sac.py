@@ -6,7 +6,7 @@ import math
 
 from agent import Agent
 from agent.critic import DoubleQCritic
-from agent.actor import DiagGaussianActor
+from agent.actor import DiagGaussianActor, DeterministicActor
 import utils
 
 import hydra
@@ -95,8 +95,8 @@ class SACAgent(Agent):
 #         action = dist.sample() if sample else dist.mean
 #         action = action.clamp(*self.action_range) # Shape: (1,2,4)
 #         action = action[:,0,:] # # Shape: (1,4)
-        act_probs = self.actor(obs, adj) # Shape: (BATCH_SIZE, N_TASKS, 4)
-        act_probs = act_probs[:,0,:] # Shape (BATCH_SIZE,4)
+        action = self.actor(obs, adj) # Shape: (BATCH_SIZE, N_TASKS, 4)
+        action = action[:,0,:] # Shape (BATCH_SIZE,4)
         assert action.ndim == 2 and action.shape[0] == 1 # BATCH_SIZE needs to be 1 in act()
         return utils.to_np(action[0])
 
@@ -105,12 +105,30 @@ class SACAgent(Agent):
         next_obs = torch.FloatTensor(next_obs).to(self.device)
         next_adj = torch.FloatTensor(next_adj).to(self.device)
         done = torch.FloatTensor(done).to(self.device)
-        dist = self.actor(next_obs, next_adj)
-        next_action = dist.rsample()
-        log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+        
+#         dist = self.actor(next_obs, next_adj)
+#         next_action = dist.rsample()
+#         log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+
+        #  Get the action
+        act_probs = self.actor(next_obs, next_adj) # (BATCH_SIZE, N_TASKS, N_ACTION)
+        torch_ones = torch.ones((self.batch_size, self.n_tasks, self.action_dim)).cuda()
+        torch_zeros = torch.zeros((self.batch_size, self.n_tasks, self.action_dim)).cuda()
+        
+        max_actions = torch.max(act_probs, dim=-1, keepdim=True)
+        max_action_indices = max_actions[1]
+        max_actions = max_actions[0]
+        mask_max = act_probs == max_actions # Shape: (BS, NT, NA)
+        
+        next_action = torch.where(mask_max, torch_ones, torch_zeros) # Shape: (BS, NT, NA)
+        
+        log_probs = torch.log(act_probs) # Shape: (BS, NT, NA)
+        chosen_action_log_prob = torch.gather(log_probs, -1, max_action_indices) # # Shape: (BS, NT, 1)
+        
         target_Q1, target_Q2 = self.critic_target(next_obs, next_action, next_adj)
         target_V = torch.min(target_Q1,
-                             target_Q2) - self.alpha.detach() * log_prob
+                             target_Q2) - self.alpha.detach() * chosen_action_log_prob
+        
         reward = np.resize(reward, (self.batch_size, self.n_tasks, 1))
         reward = torch.FloatTensor(reward).to(self.device)
         done.resize_(reward.shape[0], self.n_tasks, 1)
@@ -137,17 +155,32 @@ class SACAgent(Agent):
     def update_actor_and_alpha(self, obs, adj, logger, step):
         obs = torch.FloatTensor(obs).to(self.device)
         adj = torch.FloatTensor(adj).to(self.device)
-        dist = self.actor(obs, adj)
-        action = dist.rsample()
-        log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+        
+#         dist = self.actor(obs, adj)
+#         action = dist.rsample()
+#         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+        act_probs = self.actor(obs, adj) # (BATCH_SIZE, N_TASKS, N_ACTION)
+        torch_ones = torch.ones((self.batch_size, self.n_tasks, self.action_dim)).cuda()
+        torch_zeros = torch.zeros((self.batch_size, self.n_tasks, self.action_dim)).cuda()
+        
+        max_actions = torch.max(act_probs, dim=-1, keepdim=True)
+        max_action_indices = max_actions[1]
+        max_actions = max_actions[0]
+        mask_max = act_probs == max_actions # Shape: (BS, NT, NA)
+        
+        action = torch.where(mask_max, torch_ones, torch_zeros) # Shape: (BS, NT, NA)
+        
+        log_probs = torch.log(act_probs) # Shape: (BS, NT, NA)
+        chosen_action_log_prob = torch.gather(log_probs, -1, max_action_indices) # # Shape: (BS, NT, 1)
+        
         actor_Q1, actor_Q2 = self.critic(obs, action, adj)
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
-        actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
+        actor_loss = (self.alpha.detach() * chosen_action_log_prob - actor_Q).mean()
 
         logger.log('train_actor/loss', actor_loss, step)
         logger.log('train_actor/target_entropy', self.target_entropy, step)
-        logger.log('train_actor/entropy', -log_prob.mean(), step)
+        logger.log('train_actor/entropy', -chosen_action_log_prob.mean(), step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
@@ -159,7 +192,7 @@ class SACAgent(Agent):
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
+                          (-chosen_action_log_prob - self.target_entropy).detach()).mean()
             logger.log('train_alpha/loss', alpha_loss, step)
             logger.log('train_alpha/value', self.alpha, step)
             alpha_loss.backward()

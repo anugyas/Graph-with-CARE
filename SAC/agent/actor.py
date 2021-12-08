@@ -70,7 +70,7 @@ class DeterministicActor(nn.Module):
 
     def forward(self, obs, adj):
         # The output will represent propabilities for each action
-        act_probs = F.softmax(self.trunk(obs, adj))
+        act_probs = F.softmax(self.trunk(obs, adj), dim=-1)
         self.outputs['act_probs'] = act_probs
         return act_probs
 
