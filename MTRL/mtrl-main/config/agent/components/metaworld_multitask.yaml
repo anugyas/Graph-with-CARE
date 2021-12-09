@@ -1,16 +1,16 @@
 # @package agent.multitask
 
 num_envs: ${env.num_envs}
-should_use_disentangled_alpha: False
-should_use_task_encoder: False
+should_use_disentangled_alpha: True # CHANGED: Default was False, CARE CONFIG
+should_use_task_encoder: True # CHANGED: Default was False, CARE CONFIG
 should_use_multi_head_policy: False
 should_use_disjoint_policy: False # experimental. This variable is ignored if should_use_multi_head_policy is set to False.
 task_encoder_cfg:
   model_cfg:
     _target_: mtrl.agent.components.task_encoder.TaskEncoder
     pretrained_embedding_cfg:
-      should_use: False
-      path_to_load_from: /private/home/sodhani/projects/mtrl/metadata/task_embedding/roberta_small/${env.name}.json
+      should_use: True # CHANGED: Deafult was False, CARE CONFIG
+      path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-main/metadata/task_embedding/roberta_small/${env.name}.json
       ordered_task_list: ${env.ordered_task_list}
     num_embeddings: ${agent.multitask.num_envs}
     embedding_dim: 50
@@ -28,5 +28,5 @@ actor_cfg:
   moe_cfg:
     mode: soft_modularization
     num_experts: 4
-    should_use: False
+    should_use: False # TODO: think about changing this
 critic_cfg: ${agent.multitask.actor_cfg}

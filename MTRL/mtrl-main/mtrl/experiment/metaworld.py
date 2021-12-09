@@ -108,6 +108,7 @@ class Experiment(multitask.Experiment):
                     multitask_obs=multitask_obs, modes=["eval"]
                 )
             multitask_obs, reward, done, info = vec_env.step(action)
+            # print("MTOBS STEP SHAPE: ", multitask_obs)
             success += np.asarray([x["success"] for x in info])
             mask = mask * (1 - done.astype(int))
             episode_reward += reward * mask

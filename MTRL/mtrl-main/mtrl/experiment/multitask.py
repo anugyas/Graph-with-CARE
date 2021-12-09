@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 
 import hydra
 import numpy as np
+import torch
 
 from mtrl.agent import utils as agent_utils
 from mtrl.env.types import EnvType
@@ -214,6 +215,23 @@ class Experiment(experiment.Experiment):
                         ],
                     )  # (num_envs, action_dim)
 
+            # Calculate the adjacency matrix of the current obs
+            with torch.no_grad():
+                if self.agent.should_use_task_encoder:
+                    task_encoding = self.agent.get_task_encoding(
+                        env_index=env_indices.to(self.device, non_blocking=True), 
+                        modes=[
+                            train_mode,
+                        ],
+                        disable_grad=True
+                    )
+                else:
+                    task_encoding = None
+            
+            # print('task_encoding.shape: {}'.format(task_encoding.shape))
+            curr_adj = torch.cov(task_encoding).to('cpu')
+            # print('curr_adj.shape: {}'.format(curr_adj.shape))
+
             # run training update
             if step >= exp_config.init_steps:
                 num_updates = (
@@ -222,6 +240,23 @@ class Experiment(experiment.Experiment):
                 for _ in range(num_updates):
                     self.agent.update(self.replay_buffer, self.logger, step)
             next_multitask_obs, reward, done, info = vec_env.step(action)
+            next_env_indices = next_multitask_obs["task_obs"]
+            with torch.no_grad():
+                if self.agent.should_use_task_encoder:
+                    task_encoding = self.agent.get_task_encoding(
+                        env_index=next_env_indices.to(self.device, non_blocking=True), 
+                        modes=[
+                            train_mode,
+                        ],
+                        disable_grad=True
+                    )
+                else:
+                    task_encoding = None
+            
+            # print('task_encoding.shape: {}'.format(task_encoding.shape))
+            next_adj = torch.cov(task_encoding).to('cpu')
+            # print('next_adj.shape: {}'.format(next_adj.shape))
+
             if self.should_reset_env_manually:
                 if (episode_step[0] + 1) % self.max_episode_steps == 0:
                     # we do a +2 because we started the counting from 0 and episode_step is incremented after updating the buffer
@@ -232,21 +267,49 @@ class Experiment(experiment.Experiment):
                 success += np.asarray([x["success"] for x in info])
 
             # allow infinite bootstrap
+            # for index, env_index in enumerate(env_indices):
+            #     done_bool = (
+            #         0
+            #         if episode_step[index] + 1 == self.max_episode_steps
+            #         else float(done[index])
+            #     )
+            #     if index not in self.envs_to_exclude_during_training:
+            #         self.replay_buffer.add(
+            #             multitask_obs["env_obs"][index],
+            #             action[index],
+            #             reward[index],
+            #             curr_adj[index],
+            #             next_multitask_obs["env_obs"][index],
+            #             next_adj[index],
+            #             done_bool,
+            #             task_obs=env_index,
+            #         )
+            # print('*done.shape: {}'.format(*(done.shape)))
+            done_bool = np.empty(*(done.shape))
             for index, env_index in enumerate(env_indices):
-                done_bool = (
+                done_bool[index] = (
                     0
                     if episode_step[index] + 1 == self.max_episode_steps
                     else float(done[index])
                 )
-                if index not in self.envs_to_exclude_during_training:
-                    self.replay_buffer.add(
-                        multitask_obs["env_obs"][index],
-                        action[index],
-                        reward[index],
-                        next_multitask_obs["env_obs"][index],
-                        done_bool,
-                        task_obs=env_index,
-                    )
+
+            # print('multitask_obs["env_obs"].shape: {}'.format(multitask_obs["env_obs"].shape))
+            # print('reward.shape to add: {}'.format(reward.shape))
+            # print('reward_modified.shape to add: {}'.format(np.expand_dims(reward, axis=-1).shape))
+            
+            # print('done_bool: {}'.format(done_bool))
+            # print('not done_bool: {}'.format(1 - done_bool))
+            
+            self.replay_buffer.add(
+                multitask_obs["env_obs"],
+                action,
+                np.expand_dims(reward, axis=-1),
+                curr_adj,
+                next_multitask_obs["env_obs"],
+                next_adj,
+                np.expand_dims(done_bool, axis=-1),
+                np.expand_dims(env_indices, axis=-1), # TODO: delete this at some point this will be not needed
+            )
 
             multitask_obs = next_multitask_obs
             episode_step += 1

@@ -53,7 +53,6 @@ class Agent(AbstractAgent):
         )
 
         self.should_use_task_encoder = self.multitask_cfg.should_use_task_encoder
-
         self.discount = discount
         self.critic_tau = critic_tau
         self.encoder_tau = encoder_tau
@@ -206,10 +205,12 @@ class Agent(AbstractAgent):
                 task_encoding=task_encoding, component_name="", env_index=env_index
             )
             obs = env_obs.float().to(self.device)
+
+            task_adj_matrix  = torch.cov(task_info.encoding)
             if len(obs.shape) == 1 or len(obs.shape) == 3:
                 obs = obs.unsqueeze(0)  # Make a batch
             mtobs = MTObs(env_obs=obs, task_obs=env_index, task_info=task_info)
-            mu, pi, _, _ = self.actor(mtobs=mtobs)
+            mu, pi, _, _ = self.actor(task_adj_matrix, mtobs=mtobs)
             if sample:
                 action = pi
             else:
@@ -274,8 +275,8 @@ class Agent(AbstractAgent):
             TensorType: target values.
         """
         mtobs = MTObs(env_obs=batch.next_env_obs, task_obs=None, task_info=task_info)
-        _, policy_action, log_pi, _ = self.actor(mtobs=mtobs)
-        target_Q1, target_Q2 = self.critic_target(mtobs=mtobs, action=policy_action)
+        _, policy_action, log_pi, _ = self.actor(adj=batch.next_adjs, mtobs=mtobs)
+        target_Q1, target_Q2 = self.critic_target(adj=batch.next_adjs, mtobs=mtobs, action=policy_action)
         return (
             torch.min(target_Q1, target_Q2)
             - self.get_alpha(env_index=batch.task_obs).detach() * log_pi
@@ -301,11 +302,16 @@ class Agent(AbstractAgent):
         """
         with torch.no_grad():
             target_V = self._get_target_V(batch=batch, task_info=task_info)
+            # print('target_V.shape: {}, batch.reward.shape: {}, batch.not_done.shape: {}'.format(
+            #     target_V.shape, batch.reward.shape, batch.not_done.shape
+            # ))
             target_Q = batch.reward + (batch.not_done * self.discount * target_V)
+            # print('target_Q.shape: {}'.format(target_Q.shape))
 
         # get current Q estimates
         mtobs = MTObs(env_obs=batch.env_obs, task_obs=None, task_info=task_info)
         current_Q1, current_Q2 = self.critic(
+            adj=batch.adjs,
             mtobs=mtobs,
             action=batch.action,
             detach_encoder=False,
@@ -370,8 +376,8 @@ class Agent(AbstractAgent):
             task_obs=None,
             task_info=task_info,
         )
-        _, pi, log_pi, log_std = self.actor(mtobs=mtobs, detach_encoder=True)
-        actor_Q1, actor_Q2 = self.critic(mtobs=mtobs, action=pi, detach_encoder=True)
+        _, pi, log_pi, log_std = self.actor(adj=batch.adjs, mtobs=mtobs, detach_encoder=True)
+        actor_Q1, actor_Q2 = self.critic(adj=batch.adjs, mtobs=mtobs, action=pi, detach_encoder=True)
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         if self.loss_reduction == "mean":
@@ -456,7 +462,7 @@ class Agent(AbstractAgent):
                 )
             else:
                 task_info = TaskInfo(
-                    encoding=task_encoding.detach(),
+                    encoding=task_encoding,
                     compute_grad=False,
                     env_index=env_index,
                 )
@@ -561,11 +567,16 @@ class Agent(AbstractAgent):
         else:
             batch = replay_buffer.sample(buffer_index_to_sample)
 
+
+        # print("Replay buffer obs sample: ", batch.env_obs.shape)
+        # print("Replay buffer next obs sample: ", batch.next_env_obs.shape)
+
         logger.log("train/batch_reward", batch.reward.mean(), step)
         if self.should_use_task_encoder:
             self.task_encoder_optimizer.zero_grad()
+            # print('batch.task_obs.shape: {}'.format(torch.squeeze(batch.task_obs).shape))
             task_encoding = self.get_task_encoding(
-                env_index=batch.task_obs.squeeze(1),
+                env_index=torch.squeeze(batch.task_obs), # There was unsqueeze(1) here
                 disable_grad=False,
                 modes=["train"],
             )
@@ -577,6 +588,9 @@ class Agent(AbstractAgent):
             component_name="critic",
             env_index=batch.task_obs,
         )
+        # print('task_info.encoding.shape: {}'.format(
+        #     task_info.encoding.shape
+        # ))
         self.update_critic(
             batch=batch,
             task_info=task_info,

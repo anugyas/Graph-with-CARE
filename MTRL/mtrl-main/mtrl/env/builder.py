@@ -61,17 +61,30 @@ def build_metaworld_vec_env(
         "should_perform_reward_normalization": True,
     }
 
+    # print('benchmark_name: {}'.format(benchmark_name))
+
     funcs_to_make_envs, env_id_to_task_map = get_list_of_func_to_make_metaworld_envs(
         **make_kwargs
     )
+    
+    # print('funcs_to_make_envs: {}, env_id_to_task_map: {}'.format(
+    #     funcs_to_make_envs, env_id_to_task_map
+    # ))
+
     env_metadata = {
         "ids": list(range(num_tasks)),
         "mode": [mode for _ in range(num_tasks)],
     }
+
+    print('env_metadata: {}'.format(env_metadata))
+
     env = MetaWorldVecEnv(
         env_metadata=env_metadata,
         env_fns=funcs_to_make_envs,
         context="spawn",
         shared_memory=False,
     )
+
+    print('env: {}'.format(env))
+
     return env, env_id_to_task_map

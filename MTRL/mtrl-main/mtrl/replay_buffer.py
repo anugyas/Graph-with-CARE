@@ -16,7 +16,9 @@ class ReplayBufferSample:
         "env_obs",
         "action",
         "reward",
+        "adjs",
         "next_env_obs",
+        "next_adjs",
         "not_done",
         "task_obs",
         "buffer_index",
@@ -24,7 +26,9 @@ class ReplayBufferSample:
     env_obs: TensorType
     action: TensorType
     reward: TensorType
+    adjs: TensorType
     next_env_obs: TensorType
+    next_adjs: TensorType
     not_done: TensorType
     task_obs: TensorType
     buffer_index: TensorType
@@ -34,8 +38,9 @@ class ReplayBuffer(object):
     """Buffer to store environment transitions."""
 
     def __init__(
-        self, env_obs_shape, task_obs_shape, action_shape, capacity, batch_size, device
+        self, num_envs, env_obs_shape, task_obs_shape, action_shape, capacity, batch_size, device
     ):
+        # print('num_envs in ReplayBuffer: {}'.format(num_envs))
         self.capacity = capacity
         self.batch_size = batch_size
         self.device = device
@@ -44,12 +49,17 @@ class ReplayBuffer(object):
         env_obs_dtype = np.float32 if len(env_obs_shape) == 1 else np.uint8
         task_obs_dtype = np.int64
 
-        self.env_obses = np.empty((capacity, *env_obs_shape), dtype=env_obs_dtype)
-        self.next_env_obses = np.empty((capacity, *env_obs_shape), dtype=env_obs_dtype)
-        self.actions = np.empty((capacity, *action_shape), dtype=np.float32)
-        self.rewards = np.empty((capacity, 1), dtype=np.float32)
-        self.not_dones = np.empty((capacity, 1), dtype=np.float32)
-        self.task_obs = np.empty((capacity, *task_obs_shape), dtype=task_obs_dtype)
+        # self.env_obs_shape = env_obs_shape
+        # print('env_obs_shape in ReplayBuffer: {}'.format(env_obs_shape))
+
+        self.env_obses = np.empty((capacity, num_envs, *env_obs_shape), dtype=env_obs_dtype)
+        self.next_env_obses = np.empty((capacity, num_envs, *env_obs_shape), dtype=env_obs_dtype)
+        self.actions = np.empty((capacity, num_envs, *action_shape), dtype=np.float32)
+        self.rewards = np.empty((capacity, num_envs, 1), dtype=np.float32)
+        self.not_dones = np.empty((capacity, num_envs, 1), dtype=np.float32)
+        self.task_obs = np.empty((capacity, num_envs, *task_obs_shape), dtype=task_obs_dtype)
+        self.adjs = np.empty((capacity, num_envs, num_envs), dtype=np.float32)
+        self.next_adjs = np.empty((capacity, num_envs, num_envs), dtype=np.float32)
 
         self.idx = 0
         self.last_save = 0
@@ -58,13 +68,20 @@ class ReplayBuffer(object):
     def is_empty(self):
         return self.idx == 0
 
-    def add(self, env_obs, action, reward, next_env_obs, done, task_obs):
+    def add(self, env_obs, action, reward, adj, next_env_obs, next_adj, done, task_obs):
+        # print('ReplayBuffer add() --> sampled env_obses.shape: {}'.format(self.env_obses.shape))
+
+        # print('self.task_obs.shape: {}'.format(self.task_obs.shape))
+        # print('task_obs.shape: {}'.format(task_obs.shape))
+        
         np.copyto(self.env_obses[self.idx], env_obs)
         np.copyto(self.actions[self.idx], action)
         np.copyto(self.rewards[self.idx], reward)
         np.copyto(self.next_env_obses[self.idx], next_env_obs)
-        np.copyto(self.not_dones[self.idx], not done)
+        np.copyto(self.not_dones[self.idx], 1 - done)
         np.copyto(self.task_obs[self.idx], task_obs)
+        np.copyto(self.adjs[self.idx], adj)
+        np.copyto(self.next_adjs[self.idx], next_adj)
 
         self.idx = (self.idx + 1) % self.capacity
         self.full = self.full or self.idx == 0
@@ -85,9 +102,11 @@ class ReplayBuffer(object):
         ).float()
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         env_indices = torch.as_tensor(self.task_obs[idxs], device=self.device)
+        adjs = torch.as_tensor(self.adjs[idxs], device=self.device)
+        next_adjs = torch.as_tensor(self.next_adjs[idxs], device=self.device)
 
         return ReplayBufferSample(
-            env_obses, actions, rewards, next_env_obses, not_dones, env_indices, idxs
+            env_obses, actions, rewards, adjs, next_env_obses, next_adjs, not_dones, env_indices, idxs
         )
 
     def sample_an_index(
