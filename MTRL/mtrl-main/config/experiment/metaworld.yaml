@@ -6,7 +6,7 @@ init_steps: 1500
 num_train_steps: 1000000
 eval_freq: 10000 # same as save frequency. This should be a muliple of save.buffer.size_per_chunk
 num_eval_episodes: 10
-should_resume: True
+should_resume: False #TODO: Change this when actually training
 save:
   model:
     retain_last_n: 1

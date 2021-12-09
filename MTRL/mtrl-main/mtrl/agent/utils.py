@@ -5,6 +5,7 @@ from typing import List
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from mtrl.agent.components import moe_layer
 from mtrl.utils.types import ModelType, TensorType
@@ -183,3 +184,116 @@ def build_mlp(
         num_layers=num_layers,
     )
     return nn.Sequential(*mods)
+
+
+
+# Add DGN models
+class MTRL_AttModel(nn.Module):
+    """
+    """
+    def __init__(self, din, hidden_dim, dout):
+        super(MTRL_AttModel, self).__init__()
+        self.fcv = nn.Linear(din, hidden_dim).to('cuda')
+        self.fck = nn.Linear(din, hidden_dim).to('cuda')
+        self.fcq = nn.Linear(din, hidden_dim).to('cuda')
+
+    def forward(self, x, mask):
+        v = torch.tanh(self.fcv(x))
+        q = torch.tanh(self.fcq(x))
+        # print('x.shape: {}'.format(x.shape))
+        # print('q.shape: {}'.format(q.shape))
+        k = torch.transpose(torch.tanh(self.fck(x)),-1,-2)
+        # print('k.shape: {}'.format(k.shape))
+        att = F.softmax(torch.mul(torch.matmul(q,k), mask) - 9e15*(1 - mask), dim=-1)
+        # Note: Order of applying adj matrix is different than that in paper. Don't get confused!
+        out = torch.matmul(att,v)
+        return out
+
+class MTRL_DGN(nn.Module):
+    """
+    """
+    def __init__(self,
+                 input_dim, # hidden_dim
+                 hidden_dim, # hidden_dim
+                 output_dim, # output_dim
+                 attention_num_layers,
+                 mlp_num_layers):
+        super(MTRL_DGN, self).__init__()
+
+        # self.encoder = MTRL_Encoder(num_inputs,hidden_dim)
+        # TODO: Try both single encoder and mix of encoder settings
+        # Will remain same for MTRL
+        self.attention_num_layers = attention_num_layers
+        self.attention_layers: List[nn.Module] = []
+        for _ in range(self.attention_num_layers):
+            self.attention_layers.append(MTRL_AttModel(input_dim, hidden_dim, hidden_dim))
+
+        # self.att_1 = MTRL_AttModel(hidden_dim,hidden_dim,hidden_dim)
+        # self.att_2 = MTRL_AttModel(hidden_dim,hidden_dim,hidden_dim)
+        
+        # The input to the final mlp is the concatenation of obs embeddings, and two other attention heads 
+        self.mlp = build_mlp((self.attention_num_layers+1)*hidden_dim, hidden_dim, output_dim, mlp_num_layers)
+        # Q Net remains same for MTRL
+
+    def forward(self, x, mask):
+        # h1 = self.encoder(x)
+
+        attention_heads = []
+        attention_head = x
+        for i in range(self.attention_num_layers):
+            attention_head = self.attention_layers[i](attention_head, mask)
+            attention_heads.append(attention_head)
+
+        attention_heads = [x] + attention_heads
+        # attention_heads = torch.Tensor(attention_heads)
+        # print('attention_heads: {}'.format(attention_heads))
+        output = torch.cat(attention_heads, dim=-1)
+        # print('cat.shape: {}'.format(output.shape))
+        output = self.mlp(torch.cat(attention_heads, dim=-1))
+        # print('output.shape: {}'.format(output.shape))
+
+        # h1 = self.att_1(x, mask)
+        # h2 = self.att_2(h1, mask) 
+        
+        # output = torch.cat((x,h1,h2), dim=-1)
+        # op = self.mlp(h4)
+        return output
+    
+    def __iter__(self):
+        return iter(self._modules.values())
+    
+    def __len__(self) -> int:
+        return len(self._modules)
+
+class GCModel(nn.Module):
+
+    def __init__(self, input_dim, hidden_dim, output_dim, att_num_layers,
+                 mlp_num_layers, trunk_num_layers):
+
+        super(GCModel, self).__init__()
+        self.trunk = build_mlp(  # type: ignore[assignment]
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            output_dim=hidden_dim,
+            num_layers=trunk_num_layers,
+        )
+
+        # print('trunk.input_dim: {}, trunk.hidden_dim: {}, trunk.output_dim: {}, trunk.num_layers: {}'.format(
+        #     input_dim, hidden_dim, hidden_dim, trunk_num_layers
+        # ))
+
+        self.attention = MTRL_DGN(
+            input_dim=hidden_dim, # hidden_dim
+            hidden_dim=hidden_dim, # hidden_dim
+            output_dim=output_dim, # output_dim
+            attention_num_layers=att_num_layers,
+            mlp_num_layers=mlp_num_layers
+        )
+
+    def forward(self, x, mask):
+        # print('x.shape: {}'.format(x.shape))
+        embedding = F.relu(self.trunk(x))
+        # print('embedding_after_trunk.shape: {}'.format(embedding.shape))
+        output = self.attention(embedding, mask)
+        # print('output_after_attention.shape: {}'.format(output.shape))
+        return output

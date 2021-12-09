@@ -1,6 +1,6 @@
 # @package agent.critic
 
-_target_: mtrl.agent.components.critic.Critic
+_target_: mtrl.agent.components.critic.GCCritic
 hidden_dim: ${agent.actor.hidden_dim}
 num_layers: ${agent.actor.num_layers}
 encoder_cfg: ${agent.encoder}

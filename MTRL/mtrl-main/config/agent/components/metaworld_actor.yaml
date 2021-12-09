@@ -1,6 +1,6 @@
 # @package agent.actor
 
-_target_: mtrl.agent.components.actor.Actor
+_target_: mtrl.agent.components.actor.GCActor
 num_layers: 3
 hidden_dim: 400
 log_std_bounds: [-20, 2]

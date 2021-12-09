@@ -1,7 +1,7 @@
 defaults:
   - setup: metaworld
   - experiment: ${defaults.0.setup}
-  - agent: sac
+  - agent: state_sac # CHANGED: default is sac, CARE CONFIG
   - agent/components: ${defaults.0.setup}_actor
   - agent/components: ${defaults.0.setup}_critic
   - agent/components: ${defaults.0.setup}_encoder
@@ -17,7 +17,7 @@ defaults:
   - agent/optimizers: ${defaults.0.setup}_critic
   - agent/optimizers: ${defaults.0.setup}_decoder
   - agent/optimizers: ${defaults.0.setup}_encoder
-  - env: ???
+  - env: metaworld-mt10 # CARE CONFIG
   - replay_buffer: mtrl
   - logger: mtrl
   - metrics: ${defaults.0.setup}
