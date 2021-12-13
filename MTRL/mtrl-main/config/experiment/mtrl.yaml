@@ -5,7 +5,7 @@ builder:
 init_steps: 1500
 num_train_steps: 1000000
 eval_freq: 10000 # same as save frequency. This should be a muliple of save.buffer.size_per_chunk
-num_eval_episodes: 10
+num_eval_episodes: 1 # CHANGED: Default was 10s
 should_resume: True
 save:
   model:

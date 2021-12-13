@@ -1,6 +1,6 @@
 # @package agent.encoder
 
-type_to_select: feedforward # CHANGE, default was identity, CARE config is mode, GraphWithCARE config is FeedForward
+type_to_select: moe # CHANGE, default was identity, CARE config is mode, GraphWithCARE config is FeedForward
 
 identity:
   type: identity
@@ -30,9 +30,9 @@ moe:
     num_layers: 2
     feature_dim: ${agent.encoder_feature_dim}
     should_tie_encoders: true
-  num_experts: 4 # CHANGED to 4, default was 9, CARE config
+  num_experts: 9 # CHANGED to 4, default was 9, CARE config
   task_id_to_encoder_id_cfg:
-    mode: attention # CHANGED to attention, default was cluster, CARE config #attention # supported modes are identity, ensemble, cluster, gate, attention
+    mode: cluster # CHANGED to attention, default was cluster, CARE config #attention # supported modes are identity, ensemble, cluster, gate, attention
     num_envs: ${env.num_envs}
     gate:
       embedding_dim: 50

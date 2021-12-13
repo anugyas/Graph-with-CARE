@@ -339,12 +339,19 @@ class MixtureofExpertsEncoder(Encoder):
         env_obs = mtobs.env_obs
         task_info = mtobs.task_info
         encoder_mask = self.selection_network(task_info=task_info)
+        print('IN MOE FORWARD:\nenv_obs.shape: {}'.format(env_obs.shape)) # (BATCH_SIZE, NUM_ENV, OBS_SHAPE)
+        print('encoder_mask.shape: {}'.format(encoder_mask.shape)) # (BATCH_SIZE, NUM_ENV, OBS_SHAPE)
         encoding = self.moe(env_obs)
+        print('encoding.shape: {}'.format(encoding.shape))
         if detach:
             encoding = encoding.detach()
         sum_of_masked_encoding = (encoding * encoder_mask).sum(dim=0)
+        print('sum_of_masked_encoding: {}'.format(
+            sum_of_masked_encoding.shape
+        ))
         sum_of_encoder_count = encoder_mask.sum(dim=0)
         encoding = sum_of_masked_encoding / sum_of_encoder_count
+        print('final encoding.shape: {}'.format(encoding.shape))
         return encoding
 
     def copy_conv_weights_from(self, source):

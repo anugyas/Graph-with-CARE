@@ -32,15 +32,16 @@ import yaml
 from torch.utils import tensorboard as tb
 from agent.sac import SACAgent
 
-buffer_size = 100000 #change back to 65000
+buffer_size = 1000000 #change back to 65000
 
-GRID_DIM = 10  # TODO: Tune this
-NUM_TASKS = 2  # TODO: Tune this
+GRID_DIM = 50  # TODO: Tune this
+NUM_TASKS = 10  # TODO: Tune this
 EVAL_STEPS = 10000
+EPISODE_STEPS = 5000 
 
 class Workspace(object):
     def __init__(self, cfg):
-        self.work_dir = os.getcwd()
+        self.work_dir = os.getcwd() + '/50GridDim/10Tasks/5Att'
         print(f'workspace: {self.work_dir}')
 
         self.cfg = cfg
@@ -90,8 +91,10 @@ class Workspace(object):
                 adj = np.array([adj])
                 with utils.eval_mode(self.agent):
                     action = self.agent.act(obs, adj, sample = False)
-                obs, adj, reward, _ = self.env.step(action)
+                action_to_apply = np.argmax(action, axis=0)
+                obs, adj, reward, _ = self.env.step(action_to_apply)
                 episode_reward += reward
+                eval_step += 1
             average_episode_reward += episode_reward
         average_episode_reward /= self.cfg["num_eval_episodes"]
         self.logger.log('eval/episode_reward', average_episode_reward,
@@ -102,7 +105,7 @@ class Workspace(object):
         episode, episode_reward, done = 0, 0, True
         start_time = time.time()
         while self.step < float(self.cfg["num_train_steps"]):
-            if done:
+            if done: # To restart every EPISODE_STEPS steps
                 if self.step > 0:
                     self.logger.log('train/duration',
                                     time.time() - start_time, self.step)

@@ -94,7 +94,7 @@ class MTRL_Encoder(nn.Module): # TODO: Need to make it a CNN for higher dim obs 
 
 
     def forward(self, x):
-        embedding = F.tanh(self.fc(x))
+        embedding = torch.tanh(self.fc(x))
         return embedding
 
 class MTRL_AttModel(nn.Module):
@@ -108,10 +108,10 @@ class MTRL_AttModel(nn.Module):
         self.fcout = nn.Linear(hidden_dim, dout)
 
     def forward(self, x, mask):
-        v = F.tanh(self.fcv(x))
-        q = F.tanh(self.fcq(x))
-        k = F.tanh(self.fck(x)).permute(0,2,1)
-        att = F.softmax(torch.mul(torch.bmm(q,k), mask) - 9e15*(1 - mask),dim=2)
+        v = torch.tanh(self.fcv(x))
+        q = torch.tanh(self.fcq(x))
+        k = torch.tanh(self.fck(x)).permute(0,2,1)
+        att = F.softmax(torch.mul(torch.bmm(q,k), mask) - 9e15*(1 - mask), dim=2)
         # Note: Order of applying adj matrix is different than that in paper. Don't get confused!
         out = torch.bmm(att,v)
         return out
@@ -155,13 +155,17 @@ class MTRL_DGN(nn.Module):
         # Q Net remains same for MTRL
 
     def forward(self, x, mask):
-        h1 = self.encoder(x)
-        h2 = self.att_1(h1, mask)
-        h3 = self.att_2(h2, mask) 
+        emb = self.encoder(x)
+        h1 = self.att_1(emb, mask)
+        h2 = self.att_2(h1, mask) 
+#         h3 = self.att_2(h2, mask) 
+#         h4 = self.att_2(h3, mask) 
+#         h5 = self.att_2(h4, mask) 
+        
         # TODO: try concatentation for MTRL
         
-        h4 = torch.cat((h1,h2,h3),dim=2)
-        op = self.mlp(h4)
+        att_cat = torch.cat((emb,h1,h2),dim=2)
+        op = self.mlp(att_cat)
         # q = self.q_net(h4)
         # Note: No concatenation done. Output of last attention head used directly
         # Note: 2 attention heads used
@@ -304,17 +308,6 @@ class GridWorldWithCare(object):
 
         # Calculate adjacency regarding to the distances of the tasks respect to the agent
         x_agent, y_agent = self.agent[0], self.agent[1]
-
-        # HARD ATTENTION
-        # Traverse through the tasks and calculate the Euclidean distance between them and the agent
-        #         for i in range(self.n_tasks):
-        #             x_task_i, y_task_i = self.tasks[i][0] - x_agent, self.tasks[i][1] - y_agent
-        #             for j in range(self.n_tasks):
-        #                 x_task_j, y_task_j = self.tasks[j][0] - x_agent, self.tasks[j][1] - y_agent
-        #                 task_dist = math.sqrt((x_task_j - x_task_i)**2 + (y_task_i - y_task_j)**2)
-        #                 if task_dist <= ADJ_THRESHOLD:
-        #                     adj[i,j] = 1
-        #                     adj[j,i] = 1
                     
         # SOFT ATTENTION
         #         adj = np.ones((self.n_tasks, self.n_tasks)) # NOTE: 
@@ -324,20 +317,11 @@ class GridWorldWithCare(object):
                 x_task_j, y_task_j = self.tasks[j][0]-x_agent, self.tasks[j][1]-y_agent
                 # Instead of having 1 or 0s, have their vectoral positions according to each other
                 task_dist = math.sqrt((x_task_j - x_task_i)**2 + (y_task_j - y_task_i)**2)
-                
-        #                 print('x_task_i: {}, y_task_i: {}, x_task_j: {}, y_task_j: {}, task_dist: {}'.format(
-        #                         x_task_i, y_task_i, x_task_j, y_task_j, task_dist
-        #                 ))
-                        
+
                 # Set this distance / GRID_DIM
                 adj[i,j] = 1 - float(task_dist)/self.grid_dim # Extract from 1 bc the closer the better
                 adj[j,i] = 1 - float(task_dist)/self.grid_dim
                 
-        
-                
-        #         print("ADJACENCY: {}".format(adj))
-
-        #         print('x_agent: {}, y_agent: {}'.format(x_agent, y_agent))
 
         return adj
 
@@ -363,8 +347,6 @@ class GridWorldWithCare(object):
 
         self.steps += 1
         x_agent, y_agent = self.agent[0], self.agent[1]
-#         print("AGENT LOCATION: ", agent_x, agent_y)
-#         print("ACTION: ", action)
         if action == 0: # Move up (decrease x by one)
             if self.is_legal(x_agent-1, y_agent):
                 # Change the agent and the maze
@@ -396,7 +378,7 @@ class GridWorldWithCare(object):
                 if self.dones[i] == 0:
                     self.dones[i] = 1
                     rewards[i] = 1
-                    total_reward += 1
+                    total_reward += 1 # TODO: increase this 
                     print("Task ", i, " completed at step ", self.steps)
             else:
                 total_reward += 1.0/float((math.sqrt((self.tasks[i][0]-new_agent_x)**2 + (self.tasks[i][1]-new_agent_y)**2)))
