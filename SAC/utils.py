@@ -377,8 +377,8 @@ class GridWorldWithCare(object):
             if self.tasks[i][0] == new_agent_x and self.tasks[i][1] == new_agent_y:
                 if self.dones[i] == 0:
                     self.dones[i] = 1
-                    rewards[i] = 10
-                    total_reward += 10
+                    rewards[i] = 1
+                    total_reward += 1 # TODO: increase this 
                     print("Task ", i, " completed at step ", self.steps)
             else:
                 total_reward += 1.0/float((math.sqrt((self.tasks[i][0]-new_agent_x)**2 + (self.tasks[i][1]-new_agent_y)**2)))
