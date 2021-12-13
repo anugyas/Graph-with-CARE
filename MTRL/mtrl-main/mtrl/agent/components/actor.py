@@ -706,6 +706,7 @@ class GCActor(BaseActor): # Graph with CARE actor
             return [self.model[-1]]  # type: ignore[index]
 
     def encode(self, mtobs: MTObs, detach: bool = False) -> TensorType:
+        # print('mtobs: {}'.format(mtobs))
         encoding = self.encoder(mtobs=mtobs, detach=detach)
         task_info = mtobs.task_info
         # print('task_info: {}'.format(mtobs.task_info))

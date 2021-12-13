@@ -18,7 +18,7 @@ psutil==5.8.0
 pytest==6.2.1
 pytest-xdist==2.2.0
 pymongo==3.11.2
-ray==1.0.1.post1
+ray==1.4.1
 setuptools==51.1.1
 sphinx==3.4.3
 sphinx-autodoc-annotation==1.0-1

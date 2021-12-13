@@ -6,7 +6,7 @@ defaults:
   - agent/components: ${defaults.0.setup}_critic
   - agent/components: ${defaults.0.setup}_encoder
   - agent/components: ${defaults.0.setup}_transition_model
-  # - agent/components: task_to_encoder_cluster
+  - agent/components: ${defaults.0.setup}_task_to_encoder_cluster
   - agent/components: ${defaults.0.setup}_mask
   - agent/components: ${defaults.0.setup}_multitask
   - agent/components: ${defaults.0.setup}_transition_model

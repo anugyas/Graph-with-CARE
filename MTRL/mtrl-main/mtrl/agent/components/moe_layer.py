@@ -30,9 +30,16 @@ class Linear(nn.Module):
                 not learn an additive bias. Defaults to True.
         """
         super().__init__()
+
+        '''
+        num_experts=num_experts,
+            in_features=env_obs_shape[0],
+            # encoder_cfg.feature_dim,
+            out_features=encoder_cfg.feature_dim,
+        '''
         self.num_experts = num_experts
-        self.in_features = in_features
-        self.out_features = out_features
+        self.in_features = in_features # obs_shape
+        self.out_features = out_features # feature_dim
         self.weight = nn.Parameter(
             torch.rand(self.num_experts, self.in_features, self.out_features)
         )
@@ -43,10 +50,16 @@ class Linear(nn.Module):
             self.use_bias = False
 
     def forward(self, x: TensorType) -> TensorType:
+        print('weight.shape: {}, x.shape: {}'.format(self.weight.shape, x.shape))
         if self.use_bias:
+            # if len(x.shape) == 3:
+            #     self.bias = nn.Parameter(torch.rand(x.shape[0], self.num_experts, 1, self.out_features))
+            #     return torch.einsum('beo,xon->bxen', x, self.weight) + self.bias
             return x.matmul(self.weight) + self.bias
         else:
-            return x.matmul(self.weight)
+            # if len(x.shape) == 3:
+            #     return torch.einsum('beo,xon->bxen', x, self.weight)
+            return x.matmul(self.weight) 
 
     def extra_repr(self) -> str:
         return f"num_experts={self.num_experts}, in_features={self.in_features}, out_features={self.out_features}, bias={self.use_bias}"
@@ -162,10 +175,19 @@ class MaskCache:
 
     def _make_mask(self, task_info: TaskInfo):
         env_index = task_info.env_index
+        print('env_index.shape: {}'.format(env_index.shape))
         encoder_mask = self.task_index_to_mask[env_index.squeeze()]
         if len(encoder_mask.shape) == 1:
             encoder_mask = encoder_mask.unsqueeze(0)
-        return encoder_mask.t().unsqueeze(2).to(env_index.device)
+        print('encoder_mask.shape: {}'.format(encoder_mask.shape))
+        # return encoder_mask.t().unsqueeze(2).to(env_index.device)
+        print('encoder_mask.transpose().shape: {}'.format(torch.transpose(encoder_mask, -1, -2).shape))
+        if len(encoder_mask.shape) == 3: # There is a batch
+            print('returning shape: {}'.format(torch.transpose(encoder_mask, -1, -2).to(env_index.device).shape))
+            return torch.transpose(encoder_mask, -1, -2).unsqueeze(-1).to(env_index.device)
+        
+        print('returning shape: {}'.format(torch.transpose(encoder_mask, -1, -2).unsqueeze(2).to(env_index.device).shape))
+        return torch.transpose(encoder_mask, -1, -2).unsqueeze(2).to(env_index.device)
 
 
 class MixtureOfExperts(nn.Module):

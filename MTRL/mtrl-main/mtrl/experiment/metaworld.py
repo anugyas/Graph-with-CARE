@@ -109,14 +109,23 @@ class Experiment(multitask.Experiment):
                 )
             multitask_obs, reward, done, info = vec_env.step(action)
             # print("MTOBS STEP SHAPE: ", multitask_obs)
+            # print('mtobs in evaluate_vec_env_of_tasks: {}'.format(multitask_obs))
+            # print('reward in evaluate_vec_env_of_tasks: {}'.format(reward))
             success += np.asarray([x["success"] for x in info])
             mask = mask * (1 - done.astype(int))
             episode_reward += reward * mask
+            # print('reward: {}'.format(reward))
             episode_step += 1
         start_index = 0
         success = (success > 0).astype("float")
+        # print('EVAL: success: {}'.format(success))
+        # print('EVAL: episode_reward in evaluate_vec_env_of_tasks: {}'.format(episode_reward))
+        # print('EVAL: self.eval_modes_to_env_ids: {}'.format(self.eval_modes_to_env_ids))
         for mode in self.eval_modes_to_env_ids:
             num_envs = len(self.eval_modes_to_env_ids[mode])
+            # print('EVAL: start_index: {}, start_index + offset * num_envs: {}'.format(
+            #     start_index, start_index + offset * num_envs
+            # ))
             self.logger.log(
                 f"{mode}/episode_reward",
                 episode_reward[start_index : start_index + offset * num_envs].mean(),
@@ -130,6 +139,15 @@ class Experiment(multitask.Experiment):
             for _current_env_index, _current_env_id in enumerate(
                 self.eval_modes_to_env_ids[mode]
             ):
+
+                # print('_current_env_index: {}, _current_env_id: {}'.format(
+                #     _current_env_index, _current_env_id
+                # ))
+
+                # print('start_index + _current_env_index * offset: {}, start_index + (_current_env_index + 1) * offset: {}'.format(
+                #     start_index + _current_env_index * offset, start_index + (_current_env_index + 1) * offset
+                # ))
+
                 self.logger.log(
                     f"{mode}/episode_reward_env_index_{_current_env_index}",
                     episode_reward[

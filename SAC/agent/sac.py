@@ -91,10 +91,6 @@ class SACAgent(Agent):
     def act(self, obs, adj, sample=False):
         obs = torch.FloatTensor(obs).to(self.device)
         adj = torch.FloatTensor(adj).to(self.device)
-#         dist = self.actor(obs, adj)
-#         action = dist.sample() if sample else dist.mean
-#         action = action.clamp(*self.action_range) # Shape: (1,2,4)
-#         action = action[:,0,:] # # Shape: (1,4)
         action = self.actor(obs, adj) # Shape: (BATCH_SIZE, N_TASKS, 4)
         action = action[:,0,:] # Shape (BATCH_SIZE,4)
         assert action.ndim == 2 and action.shape[0] == 1 # BATCH_SIZE needs to be 1 in act()
@@ -167,7 +163,6 @@ class SACAgent(Agent):
         max_action_indices = max_actions[1]
         max_actions = max_actions[0]
         mask_max = act_probs == max_actions # Shape: (BS, NT, NA)
-        
         action = torch.where(mask_max, torch_ones, torch_zeros) # Shape: (BS, NT, NA)
         
         log_probs = torch.log(act_probs) # Shape: (BS, NT, NA)

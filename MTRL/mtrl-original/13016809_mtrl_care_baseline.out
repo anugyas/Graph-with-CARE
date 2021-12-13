@@ -1,0 +1,497 @@
+setup:
+  seed: 1
+  setup: metaworld
+  base_path: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original
+  save_dir: ${setup.base_path}/logs/${setup.id}
+  device: cuda:0
+  id: 90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1
+  description: Sample Task
+  tags: null
+  git:
+    commit_id: f3b69f39020d7c94aba126e5a5d55305ff4ba2a3
+    has_uncommitted_changes: null
+    issue_id: null
+  date: '2021-12-12 22:19:10'
+  slurm_id: '13016809'
+  debug:
+    should_enable: false
+experiment:
+  name: metaworld
+  builder:
+    _target_: mtrl.experiment.${experiment.name}.Experiment
+  init_steps: 1500
+  num_train_steps: 2000000
+  eval_freq: 10000
+  num_eval_episodes: 1
+  should_resume: true
+  save:
+    model:
+      retain_last_n: 1
+    buffer:
+      should_save: true
+      size_per_chunk: 10000
+      num_samples_to_save: -1
+  save_dir: ${setup.save_dir}
+  save_video: false
+  envs_to_exclude_during_training: null
+agent:
+  name: state_sac
+  encoder_feature_dim: 50
+  num_layers: 0
+  num_filters: 0
+  builder:
+    _target_: mtrl.agent.sac.Agent
+    actor_cfg: ${agent.actor}
+    critic_cfg: ${agent.critic}
+    multitask_cfg: ${agent.multitask}
+    alpha_optimizer_cfg: ${agent.optimizers.alpha}
+    actor_optimizer_cfg: ${agent.optimizers.actor}
+    critic_optimizer_cfg: ${agent.optimizers.critic}
+    discount: 0.99
+    init_temperature: 1.0
+    actor_update_freq: 1
+    critic_tau: 0.005
+    critic_target_update_freq: 1
+    encoder_tau: 0.05
+  actor:
+    _target_: mtrl.agent.components.actor.Actor
+    num_layers: 3
+    hidden_dim: 400
+    log_std_bounds:
+    - -20
+    - 2
+    encoder_cfg: ${agent.encoder}
+    multitask_cfg: ${agent.multitask}
+  critic:
+    _target_: mtrl.agent.components.critic.Critic
+    hidden_dim: ${agent.actor.hidden_dim}
+    num_layers: ${agent.actor.num_layers}
+    encoder_cfg: ${agent.encoder}
+    multitask_cfg: ${agent.multitask}
+  encoder:
+    type_to_select: moe
+    identity:
+      type: identity
+      feature_dim: ${agent.encoder_feature_dim}
+    feedforward:
+      type: feedforward
+      hidden_dim: 50
+      num_layers: 2
+      feature_dim: ${agent.encoder_feature_dim}
+      should_tie_encoders: true
+    film:
+      type: film
+      hidden_dim: 50
+      num_layers: 2
+      feature_dim: ${agent.encoder_feature_dim}
+      should_tie_encoders: true
+    moe:
+      type: moe
+      encoder_cfg:
+        type: feedforward
+        hidden_dim: 50
+        num_layers: 2
+        feature_dim: ${agent.encoder_feature_dim}
+        should_tie_encoders: true
+      num_experts: 4
+      task_id_to_encoder_id_cfg:
+        mode: attention
+        num_envs: ${env.num_envs}
+        gate:
+          embedding_dim: 50
+          hidden_dim: 50
+          num_layers: 2
+          temperature: 1.0
+          should_use_soft_attention: false
+          topk: 2
+          task_encoder_cfg:
+            should_use_task_encoding: true
+            should_detach_task_encoding: true
+        attention:
+          embedding_dim: 50
+          hidden_dim: 50
+          num_layers: 2
+          temperature: 1.0
+          should_use_soft_attention: true
+          task_encoder_cfg:
+            should_use_task_encoding: true
+            should_detach_task_encoding: true
+        cluster:
+          env_name: ${env.name}
+          task_description: ${env.description}
+          ordered_task_list: ${env.ordered_task_list}
+          mapping_cfg: ${agent.task_to_encoder_cluster}
+          num_eval_episodes: ${experiment.num_eval_episodes}
+          batch_size: ${replay_buffer.batch_size}
+        identity:
+          num_eval_episodes: ${experiment.num_eval_episodes}
+          batch_size: ${replay_buffer.batch_size}
+        ensemble:
+          num_eval_episodes: ${experiment.num_eval_episodes}
+          batch_size: ${replay_buffer.batch_size}
+    factorized_moe:
+      type: fmoe
+      encoder_cfg: ${agent.encoder.feedforward}
+      num_factors: 2
+      num_experts_per_factor:
+      - 5
+      - 5
+    pixel:
+      type: pixel
+      feature_dim: ${agent.encoder_feature_dim}
+      num_filters: ${agent.num_filters}
+      num_layers: ${agent.num_layers}
+  transition_model:
+    _target_: mtrl.agent.components.transition_model.make_transition_model
+    transition_cfg:
+      type: ''
+      feature_dim: ${agent.encoder_feature_dim}
+      layer_width: 512
+    multitask_cfg: ${agent.multitask}
+  mask:
+    num_tasks: ${env.num_envs}
+    num_eval_episodes: ${experiment.num_eval_episodes}
+    batch_size: ${replay_buffer.batch_size}
+  multitask:
+    num_envs: 10
+    should_use_disentangled_alpha: true
+    should_use_task_encoder: true
+    should_use_multi_head_policy: false
+    should_use_disjoint_policy: false
+    task_encoder_cfg:
+      model_cfg:
+        _target_: mtrl.agent.components.task_encoder.TaskEncoder
+        pretrained_embedding_cfg:
+          should_use: true
+          path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/metadata/task_embedding/roberta_small/${env.name}.json
+          ordered_task_list: ${env.ordered_task_list}
+        num_embeddings: ${agent.multitask.num_envs}
+        embedding_dim: 50
+        hidden_dim: 50
+        num_layers: 2
+        output_dim: 50
+      optimizer_cfg: ${agent.optimizers.actor}
+      losses_to_train:
+      - critic
+      - transition_reward
+      - decoder
+      - task_encoder
+    multi_head_policy_cfg:
+      mask_cfg: ${agent.mask}
+    actor_cfg:
+      should_condition_model_on_task_info: false
+      should_condition_encoder_on_task_info: true
+      should_concatenate_task_info_with_encoder: true
+      moe_cfg:
+        mode: soft_modularization
+        num_experts: 4
+        should_use: false
+    critic_cfg: ${agent.multitask.actor_cfg}
+  gradnorm:
+    alpha: 1.0
+  task_to_encoder_cluster:
+    mt10:
+      cluster:
+        action_close:
+        - close
+        action_default:
+        - insert
+        - pick and place
+        - press
+        - reach
+        action_open:
+        - open
+        action_push:
+        - push
+        object_default:
+        - button
+        - door
+        - peg
+        - revolving joint
+        object_drawer:
+        - drawer
+        object_goal:
+        - goal
+        object_puck:
+        - puck
+        object_window:
+        - window
+    mt50:
+      cluster:
+        action_close:
+        - close
+        action_default:
+        - insert
+        - pick and place
+        - press
+        - reach
+        action_open:
+        - open
+        action_push:
+        - push
+        object_default:
+        - button
+        - door
+        - peg
+        - revolving joint
+        object_drawer:
+        - drawer
+        object_goal:
+        - goal
+        object_puck:
+        - puck
+        object_window:
+        - window
+  optimizers:
+    actor:
+      _target_: torch.optim.Adam
+      lr: 0.0003
+      betas:
+      - 0.9
+      - 0.999
+    alpha:
+      _target_: torch.optim.Adam
+      lr: 0.0003
+      betas:
+      - 0.9
+      - 0.999
+    critic:
+      _target_: torch.optim.Adam
+      lr: 0.0003
+      betas:
+      - 0.9
+      - 0.999
+    decoder:
+      _target_: torch.optim.Adam
+      lr: 0.0003
+      betas:
+      - 0.9
+      - 0.999
+      weight_decay: 1.0e-07
+    encoder:
+      _target_: torch.optim.Adam
+      lr: 0.0003
+      betas:
+      - 0.9
+      - 0.999
+env:
+  name: metaworld-mt10
+  num_envs: 10
+  benchmark:
+    _target_: metaworld.MT10
+  builder:
+    make_kwargs:
+      should_perform_reward_normalization: true
+  dummy:
+    _target_: metaworld.MT1
+    env_name: pick-place-v1
+  description:
+    reach-v1: Reach a goal position. Randomize the goal positions.
+    push-v1: Push the puck to a goal. Randomize puck and goal positions.
+    pick-place-v1: Pick and place a puck to a goal. Randomize puck and goal positions.
+    door-open-v1: Open a door with a revolving joint. Randomize door positions.
+    drawer-open-v1: Open a drawer. Randomize drawer positions.
+    drawer-close-v1: Push and close a drawer. Randomize the drawer positions.
+    button-press-topdown-v1: Press a button from the top. Randomize button positions.
+    peg-insert-side-v1: Insert a peg sideways. Randomize peg and goal positions.
+    window-open-v1: Push and open a window. Randomize window positions.
+    window-close-v1: Push and close a window. Randomize window positions.
+  ordered_task_list: null
+replay_buffer:
+  _target_: mtrl.replay_buffer.ReplayBuffer
+  env_obs_shape: null
+  action_shape: null
+  capacity: 1000000
+  batch_size: 1280
+logger:
+  _target_: mtrl.logger.Logger
+  logger_dir: ${setup.save_dir}
+  use_tb: false
+metrics:
+  train:
+  - - episode
+    - E
+    - int
+    - average
+  - - step
+    - S
+    - int
+    - average
+  - - duration
+    - D
+    - time
+    - average
+  - - episode_reward
+    - R
+    - float
+    - average
+  - - success
+    - Su
+    - float
+    - average
+  - - batch_reward
+    - BR
+    - float
+    - average
+  - - actor_loss
+    - ALOSS
+    - float
+    - average
+  - - critic_loss
+    - CLOSS
+    - float
+    - average
+  - - ae_loss
+    - RLOSS
+    - float
+    - average
+  - - ae_transition_loss
+    - null
+    - float
+    - average
+  - - reward_loss
+    - null
+    - float
+    - average
+  - - actor_target_entropy
+    - null
+    - float
+    - average
+  - - actor_entropy
+    - null
+    - float
+    - average
+  - - alpha_loss
+    - null
+    - float
+    - average
+  - - alpha_value
+    - null
+    - float
+    - average
+  - - contrastive_loss
+    - MLOSS
+    - float
+    - average
+  - - max_rat
+    - MR
+    - float
+    - average
+  - - env_index
+    - ENV
+    - str
+    - constant
+  - - episode_reward_env_index_
+    - R_
+    - float
+    - average
+  - - success_env_index_
+    - Su_
+    - float
+    - average
+  - - env_index_
+    - ENV_
+    - str
+    - constant
+  - - batch_reward_agent_index_
+    - null
+    - float
+    - average
+  - - critic_loss_agent_index_
+    - AGENT_
+    - float
+    - average
+  - - actor_distilled_agent_loss_agent_index_
+    - null
+    - float
+    - average
+  - - actor_loss_agent_index_
+    - null
+    - float
+    - average
+  - - actor_target_entropy_agent_index_
+    - null
+    - float
+    - average
+  - - actor_entropy_agent_index_
+    - null
+    - float
+    - average
+  - - alpha_loss_agent_index_
+    - null
+    - float
+    - average
+  - - alpha_value_agent_index_
+    - null
+    - float
+    - average
+  - - ae_loss_agent_index_
+    - null
+    - float
+    - average
+  eval:
+  - - episode
+    - E
+    - int
+    - average
+  - - step
+    - S
+    - int
+    - average
+  - - episode_reward
+    - R
+    - float
+    - average
+  - - env_index
+    - ENV
+    - str
+    - constant
+  - - success
+    - Su
+    - float
+    - average
+  - - episode_reward_env_index_
+    - R_
+    - float
+    - average
+  - - success_env_index_
+    - Su_
+    - float
+    - average
+  - - env_index_
+    - ENV_
+    - str
+    - constant
+  - - batch_reward_agent_index_
+    - AGENT_
+    - float
+    - average
+logbook:
+  _target_: ml_logger.logbook.make_config
+  write_to_console: false
+  logger_dir: ${setup.save_dir}
+  create_multiple_log_files: false
+
+[2021-12-12 22:19:10,247][default_logger][INFO] - {"setup": {"seed": 1, "setup": "metaworld", "base_path": "/scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original", "save_dir": "${setup.base_path}/logs/${setup.id}", "device": "cuda:0", "id": "90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1", "description": "Sample Task", "tags": null, "git": {"commit_id": "f3b69f39020d7c94aba126e5a5d55305ff4ba2a3", "has_uncommitted_changes": null, "issue_id": null}, "date": "2021-12-12 22:19:10", "slurm_id": "13016809", "debug": {"should_enable": false}}, "experiment": {"name": "metaworld", "builder": {"_target_": "mtrl.experiment.${experiment.name}.Experiment"}, "init_steps": 1500, "num_train_steps": 2000000, "eval_freq": 10000, "num_eval_episodes": 1, "should_resume": true, "save": {"model": {"retain_last_n": 1}, "buffer": {"should_save": true, "size_per_chunk": 10000, "num_samples_to_save": -1}}, "save_dir": "${setup.save_dir}", "save_video": false, "envs_to_exclude_during_training": null}, "agent": {"name": "state_sac", "encoder_feature_dim": 50, "num_layers": 0, "num_filters": 0, "builder": {"_target_": "mtrl.agent.sac.Agent", "actor_cfg": "${agent.actor}", "critic_cfg": "${agent.critic}", "multitask_cfg": "${agent.multitask}", "alpha_optimizer_cfg": "${agent.optimizers.alpha}", "actor_optimizer_cfg": "${agent.optimizers.actor}", "critic_optimizer_cfg": "${agent.optimizers.critic}", "discount": 0.99, "init_temperature": 1.0, "actor_update_freq": 1, "critic_tau": 0.005, "critic_target_update_freq": 1, "encoder_tau": 0.05}, "actor": {"_target_": "mtrl.agent.components.actor.Actor", "num_layers": 3, "hidden_dim": 400, "log_std_bounds": [-20, 2], "encoder_cfg": "${agent.encoder}", "multitask_cfg": "${agent.multitask}"}, "critic": {"_target_": "mtrl.agent.components.critic.Critic", "hidden_dim": "${agent.actor.hidden_dim}", "num_layers": "${agent.actor.num_layers}", "encoder_cfg": "${agent.encoder}", "multitask_cfg": "${agent.multitask}"}, "encoder": {"type_to_select": "moe", "identity": {"type": "identity", "feature_dim": "${agent.encoder_feature_dim}"}, "feedforward": {"type": "feedforward", "hidden_dim": 50, "num_layers": 2, "feature_dim": "${agent.encoder_feature_dim}", "should_tie_encoders": true}, "film": {"type": "film", "hidden_dim": 50, "num_layers": 2, "feature_dim": "${agent.encoder_feature_dim}", "should_tie_encoders": true}, "moe": {"type": "moe", "encoder_cfg": {"type": "feedforward", "hidden_dim": 50, "num_layers": 2, "feature_dim": "${agent.encoder_feature_dim}", "should_tie_encoders": true}, "num_experts": 4, "task_id_to_encoder_id_cfg": {"mode": "attention", "num_envs": "${env.num_envs}", "gate": {"embedding_dim": 50, "hidden_dim": 50, "num_layers": 2, "temperature": 1.0, "should_use_soft_attention": false, "topk": 2, "task_encoder_cfg": {"should_use_task_encoding": true, "should_detach_task_encoding": true}}, "attention": {"embedding_dim": 50, "hidden_dim": 50, "num_layers": 2, "temperature": 1.0, "should_use_soft_attention": true, "task_encoder_cfg": {"should_use_task_encoding": true, "should_detach_task_encoding": true}}, "cluster": {"env_name": "${env.name}", "task_description": "${env.description}", "ordered_task_list": "${env.ordered_task_list}", "mapping_cfg": "${agent.task_to_encoder_cluster}", "num_eval_episodes": "${experiment.num_eval_episodes}", "batch_size": "${replay_buffer.batch_size}"}, "identity": {"num_eval_episodes": "${experiment.num_eval_episodes}", "batch_size": "${replay_buffer.batch_size}"}, "ensemble": {"num_eval_episodes": "${experiment.num_eval_episodes}", "batch_size": "${replay_buffer.batch_size}"}}}, "factorized_moe": {"type": "fmoe", "encoder_cfg": "${agent.encoder.feedforward}", "num_factors": 2, "num_experts_per_factor": [5, 5]}, "pixel": {"type": "pixel", "feature_dim": "${agent.encoder_feature_dim}", "num_filters": "${agent.num_filters}", "num_layers": "${agent.num_layers}"}}, "transition_model": {"_target_": "mtrl.agent.components.transition_model.make_transition_model", "transition_cfg": {"type": "", "feature_dim": "${agent.encoder_feature_dim}", "layer_width": 512}, "multitask_cfg": "${agent.multitask}"}, "mask": {"num_tasks": "${env.num_envs}", "num_eval_episodes": "${experiment.num_eval_episodes}", "batch_size": "${replay_buffer.batch_size}"}, "multitask": {"num_envs": 10, "should_use_disentangled_alpha": true, "should_use_task_encoder": true, "should_use_multi_head_policy": false, "should_use_disjoint_policy": false, "task_encoder_cfg": {"model_cfg": {"_target_": "mtrl.agent.components.task_encoder.TaskEncoder", "pretrained_embedding_cfg": {"should_use": true, "path_to_load_from": "/scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/metadata/task_embedding/roberta_small/${env.name}.json", "ordered_task_list": "${env.ordered_task_list}"}, "num_embeddings": "${agent.multitask.num_envs}", "embedding_dim": 50, "hidden_dim": 50, "num_layers": 2, "output_dim": 50}, "optimizer_cfg": "${agent.optimizers.actor}", "losses_to_train": ["critic", "transition_reward", "decoder", "task_encoder"]}, "multi_head_policy_cfg": {"mask_cfg": "${agent.mask}"}, "actor_cfg": {"should_condition_model_on_task_info": false, "should_condition_encoder_on_task_info": true, "should_concatenate_task_info_with_encoder": true, "moe_cfg": {"mode": "soft_modularization", "num_experts": 4, "should_use": false}}, "critic_cfg": "${agent.multitask.actor_cfg}"}, "gradnorm": {"alpha": 1.0}, "task_to_encoder_cluster": {"mt10": {"cluster": {"action_close": ["close"], "action_default": ["insert", "pick and place", "press", "reach"], "action_open": ["open"], "action_push": ["push"], "object_default": ["button", "door", "peg", "revolving joint"], "object_drawer": ["drawer"], "object_goal": ["goal"], "object_puck": ["puck"], "object_window": ["window"]}}, "mt50": {"cluster": {"action_close": ["close"], "action_default": ["insert", "pick and place", "press", "reach"], "action_open": ["open"], "action_push": ["push"], "object_default": ["button", "door", "peg", "revolving joint"], "object_drawer": ["drawer"], "object_goal": ["goal"], "object_puck": ["puck"], "object_window": ["window"]}}}, "optimizers": {"actor": {"_target_": "torch.optim.Adam", "lr": 0.0003, "betas": [0.9, 0.999]}, "alpha": {"_target_": "torch.optim.Adam", "lr": 0.0003, "betas": [0.9, 0.999]}, "critic": {"_target_": "torch.optim.Adam", "lr": 0.0003, "betas": [0.9, 0.999]}, "decoder": {"_target_": "torch.optim.Adam", "lr": 0.0003, "betas": [0.9, 0.999], "weight_decay": 1e-07}, "encoder": {"_target_": "torch.optim.Adam", "lr": 0.0003, "betas": [0.9, 0.999]}}}, "env": {"name": "metaworld-mt10", "num_envs": 10, "benchmark": {"_target_": "metaworld.MT10"}, "builder": {"make_kwargs": {"should_perform_reward_normalization": true}}, "dummy": {"_target_": "metaworld.MT1", "env_name": "pick-place-v1"}, "description": {"reach-v1": "Reach a goal position. Randomize the goal positions.", "push-v1": "Push the puck to a goal. Randomize puck and goal positions.", "pick-place-v1": "Pick and place a puck to a goal. Randomize puck and goal positions.", "door-open-v1": "Open a door with a revolving joint. Randomize door positions.", "drawer-open-v1": "Open a drawer. Randomize drawer positions.", "drawer-close-v1": "Push and close a drawer. Randomize the drawer positions.", "button-press-topdown-v1": "Press a button from the top. Randomize button positions.", "peg-insert-side-v1": "Insert a peg sideways. Randomize peg and goal positions.", "window-open-v1": "Push and open a window. Randomize window positions.", "window-close-v1": "Push and close a window. Randomize window positions."}, "ordered_task_list": null}, "replay_buffer": {"_target_": "mtrl.replay_buffer.ReplayBuffer", "env_obs_shape": null, "action_shape": null, "capacity": 1000000, "batch_size": 1280}, "logger": {"_target_": "mtrl.logger.Logger", "logger_dir": "${setup.save_dir}", "use_tb": false}, "metrics": {"train": [["episode", "E", "int", "average"], ["step", "S", "int", "average"], ["duration", "D", "time", "average"], ["episode_reward", "R", "float", "average"], ["success", "Su", "float", "average"], ["batch_reward", "BR", "float", "average"], ["actor_loss", "ALOSS", "float", "average"], ["critic_loss", "CLOSS", "float", "average"], ["ae_loss", "RLOSS", "float", "average"], ["ae_transition_loss", null, "float", "average"], ["reward_loss", null, "float", "average"], ["actor_target_entropy", null, "float", "average"], ["actor_entropy", null, "float", "average"], ["alpha_loss", null, "float", "average"], ["alpha_value", null, "float", "average"], ["contrastive_loss", "MLOSS", "float", "average"], ["max_rat", "MR", "float", "average"], ["env_index", "ENV", "str", "constant"], ["episode_reward_env_index_", "R_", "float", "average"], ["success_env_index_", "Su_", "float", "average"], ["env_index_", "ENV_", "str", "constant"], ["batch_reward_agent_index_", null, "float", "average"], ["critic_loss_agent_index_", "AGENT_", "float", "average"], ["actor_distilled_agent_loss_agent_index_", null, "float", "average"], ["actor_loss_agent_index_", null, "float", "average"], ["actor_target_entropy_agent_index_", null, "float", "average"], ["actor_entropy_agent_index_", null, "float", "average"], ["alpha_loss_agent_index_", null, "float", "average"], ["alpha_value_agent_index_", null, "float", "average"], ["ae_loss_agent_index_", null, "float", "average"]], "eval": [["episode", "E", "int", "average"], ["step", "S", "int", "average"], ["episode_reward", "R", "float", "average"], ["env_index", "ENV", "str", "constant"], ["success", "Su", "float", "average"], ["episode_reward_env_index_", "R_", "float", "average"], ["success_env_index_", "Su_", "float", "average"], ["env_index_", "ENV_", "str", "constant"], ["batch_reward_agent_index_", "AGENT_", "float", "average"]]}, "logbook": {"_target_": "ml_logger.logbook.make_config", "write_to_console": false, "logger_dir": "${setup.save_dir}", "create_multiple_log_files": false}, "status": "RUNNING", "logbook_id": "0", "logbook_timestamp": "10:19:10PM EST Dec 12, 2021", "logbook_type": "metadata"}
+Starting Experiment at Sun Dec 12 22:19:10 2021
+torch version = 1.10.0+cu102
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/actor_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/critic_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/critic_target_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/log_alpha_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/task_encoder_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/actor_optimizer_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/critic_optimizer_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/log_alpha_optimizer_0.pt
+path_to_load_from: /scratch/ig2283/Graph-with-CARE/MTRL/mtrl-original/logs/90f2497ff4cee27c0d30fbc66e6ba205f94808ba4ea16e057df58e73_issue_None_seed_1/model/task_encoder_optimizer_0.pt
+| [33mtrain[0m | S: 150 | D: 0.8 s | Su: 0.0000 | R_0: 710.4790 | R_1: -23.4452 | R_2: -16.8561 | R_3: -25.7820 | R_4: -28.5718 | R_5: -22.2881 | R_6: -52.7882 | R_7: -17.5077 | R_8: 6.3804 | R_9: -37.8110 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 1 | S: 300 | D: 0.7 s | Su: 0.0000 | R_0: 410.4398 | R_1: -37.9386 | R_2: -39.7255 | R_3: -37.6628 | R_4: -20.6603 | R_5: -19.0100 | R_6: -55.7639 | R_7: -31.1831 | R_8: -18.9974 | R_9: -25.0371 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 2 | S: 450 | D: 0.7 s | Su: 0.0000 | R_0: 202.2489 | R_1: -10.5427 | R_2: -27.2365 | R_3: -38.9655 | R_4: 125.4231 | R_5: 29.8366 | R_6: -63.1264 | R_7: -23.3288 | R_8: -14.5956 | R_9: -22.8897 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 3 | S: 600 | D: 0.7 s | Su: 0.0000 | R_0: 404.0187 | R_1: -30.6752 | R_2: -18.9227 | R_3: -41.1084 | R_4: -1.3403 | R_5: -1.7613 | R_6: -76.5282 | R_7: -21.1638 | R_8: -17.3570 | R_9: -27.2248 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 4 | S: 750 | D: 0.8 s | Su: 0.0000 | R_0: 349.3150 | R_1: -22.1352 | R_2: -35.3866 | R_3: -48.4632 | R_4: -1.5128 | R_5: -1.6186 | R_6: -84.2260 | R_7: -22.3159 | R_8: -16.1398 | R_9: -22.8252 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 5 | S: 900 | D: 0.8 s | Su: 0.0000 | R_0: 584.8407 | R_1: -36.3463 | R_2: -44.9249 | R_3: -64.3981 | R_4: -1.9561 | R_5: -1.9582 | R_6: -79.2059 | R_7: -35.1223 | R_8: -23.1384 | R_9: -38.7412 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 6 | S: 1050 | D: 0.7 s | Su: 0.0000 | R_0: 129.6862 | R_1: -58.6065 | R_2: -33.3054 | R_3: -45.5672 | R_4: -3.1219 | R_5: -2.2720 | R_6: -78.8794 | R_7: -29.3439 | R_8: -19.8024 | R_9: -41.0945 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 7 | S: 1200 | D: 0.7 s | Su: 0.0000 | R_0: 87.9362 | R_1: -32.2835 | R_2: -44.7948 | R_3: -56.5503 | R_4: -2.8171 | R_5: -1.8445 | R_6: -77.7799 | R_7: -21.1854 | R_8: -30.6850 | R_9: -50.2034 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 8 | S: 1350 | D: 0.7 s | Su: 0.1000 | R_0: 175.8998 | R_1: -35.5396 | R_2: -35.1752 | R_3: -81.9437 | R_4: -2.8602 | R_5: -2.2858 | R_6: -98.6950 | R_7: -29.7797 | R_8: -37.8763 | R_9: -38.8928 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 1.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 9 | S: 1500 | D: 0.7 s | Su: 0.1000 | R_0: 100.0658 | R_1: -65.1294 | R_2: -66.5374 | R_3: -85.8586 | R_4: -1.8735 | R_5: 16.7240 | R_6: -104.5818 | R_7: -42.0466 | R_8: -32.2585 | R_9: -57.5603 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 1.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
+| [33mtrain[0m | E: 10 | S: 1650 | D: 24.7 s | Su: 0.0000 | BR: 0.0225 | ALOSS: -10.6357 | CLOSS: 9.7781 | R_0: 99.2621 | R_1: -47.9963 | R_2: -48.9806 | R_3: -69.7454 | R_4: -3.0665 | R_5: -3.4351 | R_6: -102.9824 | R_7: -49.1810 | R_8: -47.0555 | R_9: -48.9027 | Su_0: 0.0000 | Su_1: 0.0000 | Su_2: 0.0000 | Su_3: 0.0000 | Su_4: 0.0000 | Su_5: 0.0000 | Su_6: 0.0000 | Su_7: 0.0000 | Su_8: 0.0000 | Su_9: 0.0000 | ENV_0: 0 | ENV_1: 1 | ENV_2: 2 | ENV_3: 3 | ENV_4: 4 | ENV_5: 5 | ENV_6: 6 | ENV_7: 7 | ENV_8: 8 | ENV_9: 9
