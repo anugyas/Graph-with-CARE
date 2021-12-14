@@ -18,7 +18,7 @@ class SACAgent(Agent):
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, learnable_temperature, n_tasks):
+                 batch_size, learnable_temperature, n_tasks, num_attention_heads):
         super().__init__()
 
         self.n_tasks = n_tasks
@@ -32,12 +32,14 @@ class SACAgent(Agent):
         self.critic_target_update_frequency = critic_target_update_frequency
         self.batch_size = batch_size
         self.learnable_temperature = learnable_temperature
+        self.num_attention_heads = num_attention_heads
 
         self.critic = DoubleQCritic(n_tasks=self.n_tasks,
                                     obs_dim=self.obs_dim,
                                     action_dim=self.action_dim,
                                     hidden_dim=64,
-                                    hidden_depth=2)
+                                    hidden_depth=2,
+                                    num_attention_heads=self.num_attention_heads)
 
         self.critic = self.critic.to(self.device)
 
@@ -45,7 +47,8 @@ class SACAgent(Agent):
                                            obs_dim=self.obs_dim,
                                            action_dim=self.action_dim,
                                            hidden_dim=64,
-                                           hidden_depth=2)
+                                           hidden_depth=2,
+                                           num_attention_heads=self.num_attention_heads)
         
         self.critic_target = self.critic_target.to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
@@ -54,7 +57,8 @@ class SACAgent(Agent):
                                         obs_dim=self.obs_dim,
                                         action_dim=self.action_dim,
                                         hidden_dim=64,
-                                        hidden_depth=2)
+                                        hidden_depth=2,
+                                        num_attention_heads=self.num_attention_heads)
 
         self.actor = self.actor.to(self.device)
 

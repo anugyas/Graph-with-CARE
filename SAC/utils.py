@@ -140,36 +140,28 @@ class MTRL_DGN(nn.Module):
                  hidden_dim,
                  output_dim,
                  hidden_depth,
+                 num_attention_heads,
                  output_mod=None):
         super(MTRL_DGN, self).__init__()
 
-        self.encoder = MTRL_Encoder(num_inputs,hidden_dim)
-        # TODO: Try both single encoder and mix of encoder settings
-        # Will remain same for MTRL
-        self.att_1 = MTRL_AttModel(n_tasks,hidden_dim,hidden_dim,hidden_dim)
-        self.att_2 = MTRL_AttModel(n_tasks,hidden_dim,hidden_dim,hidden_dim)
-        # self.q_net = MTRL_Q_Net(hidden_dim,num_actions)
+        self.num_attention_heads = num_attention_heads
         
-        # The input to the final mlp is the concatenation of obs embeddings, and two other attention heads 
-        self.mlp = MLP(hidden_dim*3, hidden_dim, output_dim, hidden_depth, output_mod)
-        # Q Net remains same for MTRL
+        self.encoder = MTRL_Encoder(num_inputs,hidden_dim)
+        self.attention_heads = [MTRL_AttModel(n_tasks,hidden_dim,hidden_dim,hidden_dim).cuda() for _ in range(num_attention_heads)]
+        self.mlp = MLP(hidden_dim*(num_attention_heads+1), hidden_dim, output_dim, hidden_depth, output_mod)
 
     def forward(self, x, mask):
-        emb = self.encoder(x)
-        h1 = self.att_1(emb, mask)
-        h2 = self.att_2(h1, mask) 
-#         h3 = self.att_2(h2, mask) 
-#         h4 = self.att_2(h3, mask) 
-#         h5 = self.att_2(h4, mask) 
+        mask = mask.cuda()
+        h = self.encoder(x)
+        attention_heads = [h]
+        for i in range(self.num_attention_heads):
+            h = h.cuda()
+            h = self.attention_heads[i](h, mask)
+            attention_heads.append(h)
         
-        # TODO: try concatentation for MTRL
-        
-        att_cat = torch.cat((emb,h1,h2),dim=2)
-        op = self.mlp(att_cat)
-        # q = self.q_net(h4)
-        # Note: No concatenation done. Output of last attention head used directly
-        # Note: 2 attention heads used
-        return op
+        h = torch.cat(attention_heads, dim=-1)
+        q = self.mlp(h)
+        return q 
     
     def __iter__(self):
         return iter(self._modules.values())
@@ -216,7 +208,7 @@ def to_np(t):
 
 class GridWorldWithCare(object):
     
-    def __init__(self, grid_dim, n_tasks):
+    def __init__(self, grid_dim, n_tasks, use_obs_dist):
         """
         Initialize the gridworld
         
@@ -227,6 +219,8 @@ class GridWorldWithCare(object):
         self.n_action = 4
         self.grid_dim = grid_dim
         self.n_tasks = n_tasks
+        self.use_obs_dist = use_obs_dist
+        
         # TODO: maybe include food as part of task, reach dest with > 0 food or something
         self.tasks = [0]*self.n_tasks
         self.agent = [-1, -1]
@@ -234,7 +228,10 @@ class GridWorldWithCare(object):
 
         self.dones = np.zeros(self.n_tasks) # Array to indicate whether each task is done or not -- used to calculate rewards
         self.steps = 0
-        self.len_obs = (self.n_tasks+1)*2
+        if self.use_obs_dist:
+            self.len_obs = self.n_tasks + 2
+        else:
+            self.len_obs = (self.n_tasks + 1) * 2
 
     def reset(self):
         """
@@ -272,7 +269,6 @@ class GridWorldWithCare(object):
         Returns:
         obs:
         """
-        # TODO: change this for MTRL 
         obs = []
         
         x_agent = self.agent[0]
@@ -281,13 +277,13 @@ class GridWorldWithCare(object):
         obs.append(x_agent/self.grid_dim)
         obs.append(y_agent/self.grid_dim)
 
-        # 		for i in range(-1,2):
-        # 			for j in range(-1,2):
-        # 				obs.append(self.maze[x_agent+i][y_agent+j])
-
-        for i in range(self.n_tasks):
-            obs.append((self.tasks[i][0]-x_agent)/self.grid_dim)
-            obs.append((self.tasks[i][1]-y_agent)/self.grid_dim)
+        if self.use_obs_dist:
+            for i in range(self.n_tasks):
+                obs.append(math.sqrt((self.tasks[i][0]-x_agent)**2 + (self.tasks[i][1]-y_agent)**2)/self.grid_dim)
+        else:
+            for i in range(self.n_tasks):
+                obs.append((self.tasks[i][0]-x_agent)/self.grid_dim)
+                obs.append((self.tasks[i][1]-y_agent)/self.grid_dim)
 
         # TODO: 1. if we include maze state or not, and if we do, we would need to figure out
         # how to effectively send that along with task destinations
@@ -310,7 +306,6 @@ class GridWorldWithCare(object):
         x_agent, y_agent = self.agent[0], self.agent[1]
                     
         # SOFT ATTENTION
-        #         adj = np.ones((self.n_tasks, self.n_tasks)) # NOTE: 
         for i in range(self.n_tasks):
             x_task_i, y_task_i = self.tasks[i][0]-x_agent, self.tasks[i][1]-y_agent
             for j in range(self.n_tasks):
@@ -377,8 +372,8 @@ class GridWorldWithCare(object):
             if self.tasks[i][0] == new_agent_x and self.tasks[i][1] == new_agent_y:
                 if self.dones[i] == 0:
                     self.dones[i] = 1
-                    rewards[i] = 1
-                    total_reward += 1 # TODO: increase this 
+                    rewards[i] = 10
+                    total_reward += 10
                     print("Task ", i, " completed at step ", self.steps)
             else:
                 total_reward += 1.0/float((math.sqrt((self.tasks[i][0]-new_agent_x)**2 + (self.tasks[i][1]-new_agent_y)**2)))

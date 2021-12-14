@@ -55,7 +55,8 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         return mu
 
 class DeterministicActor(nn.Module):
-    def __init__(self, n_tasks, obs_dim, action_dim, hidden_dim, hidden_depth):
+    def __init__(self, n_tasks, obs_dim, action_dim, hidden_dim, hidden_depth,
+                 num_attention_heads):
         super().__init__()
 
         self.n_tasks = n_tasks
@@ -63,7 +64,8 @@ class DeterministicActor(nn.Module):
                                     obs_dim, 
                                     hidden_dim, 
                                     action_dim,
-                                    hidden_depth)
+                                    hidden_depth,
+                                    num_attention_heads=num_attention_heads)
 
         self.outputs = dict()
         self.apply(utils.weight_init)
