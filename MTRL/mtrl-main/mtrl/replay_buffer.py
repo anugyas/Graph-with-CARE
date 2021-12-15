@@ -52,12 +52,12 @@ class ReplayBuffer(object):
         # self.env_obs_shape = env_obs_shape
         # print('env_obs_shape in ReplayBuffer: {}'.format(env_obs_shape))
 
-        self.env_obses = np.empty((capacity, num_envs, *env_obs_shape), dtype=env_obs_dtype)
-        self.next_env_obses = np.empty((capacity, num_envs, *env_obs_shape), dtype=env_obs_dtype)
-        self.actions = np.empty((capacity, num_envs, *action_shape), dtype=np.float32)
-        self.rewards = np.empty((capacity, num_envs, 1), dtype=np.float32)
-        self.not_dones = np.empty((capacity, num_envs, 1), dtype=np.float32)
-        self.task_obs = np.empty((capacity, num_envs, *task_obs_shape), dtype=task_obs_dtype)
+        self.env_obses = np.empty((capacity, *env_obs_shape), dtype=env_obs_dtype)
+        self.next_env_obses = np.empty((capacity, *env_obs_shape), dtype=env_obs_dtype)
+        self.actions = np.empty((capacity, *action_shape), dtype=np.float32)
+        self.rewards = np.empty((capacity, 1), dtype=np.float32)
+        self.not_dones = np.empty((capacity, 1), dtype=np.float32)
+        self.task_obs = np.empty((capacity, *task_obs_shape), dtype=task_obs_dtype)
         self.adjs = np.empty((capacity, num_envs, num_envs), dtype=np.float32)
         self.next_adjs = np.empty((capacity, num_envs, num_envs), dtype=np.float32)
 
@@ -78,7 +78,8 @@ class ReplayBuffer(object):
         np.copyto(self.actions[self.idx], action)
         np.copyto(self.rewards[self.idx], reward)
         np.copyto(self.next_env_obses[self.idx], next_env_obs)
-        np.copyto(self.not_dones[self.idx], 1 - done)
+        # np.copyto(self.not_dones[self.idx], 1 - done)
+        np.copyto(self.not_dones[self.idx], not done) # TODO: Maybe change this back to 1 - done? 
         np.copyto(self.task_obs[self.idx], task_obs)
         np.copyto(self.adjs[self.idx], adj)
         np.copyto(self.next_adjs[self.idx], next_adj)

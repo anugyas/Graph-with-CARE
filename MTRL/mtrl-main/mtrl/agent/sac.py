@@ -122,6 +122,7 @@ class Agent(AbstractAgent):
             )
             self._optimizers[name] = self.task_encoder_optimizer
 
+        # print('AGENT: should_complete_int: {}'.format(should_complete_init))
         if should_complete_init:
             self.complete_init(cfg_to_load_model=cfg_to_load_model)
 
@@ -133,6 +134,7 @@ class Agent(AbstractAgent):
 
         # tie encoders between actor and critic
         self.actor.encoder.copy_conv_weights_from(self.critic.encoder)
+        # print('AGENT: at the end of the compelete init')
         self.train()
 
     def train(self, training: bool = True) -> None:
@@ -168,6 +170,7 @@ class Agent(AbstractAgent):
         Returns:
             TensorType: task encodings.
         """
+        # print('in AGENT.GET_TASK_ENCODING -> TASK_ENCODER')
         if disable_grad:
             with torch.no_grad():
                 return self.task_encoder(env_index.to(self.device))
@@ -207,6 +210,7 @@ class Agent(AbstractAgent):
             obs = env_obs.float().to(self.device)
 
             task_adj_matrix  = torch.cov(task_info.encoding)
+            # print('task_adj_matrix.shape: {}'.format(task_adj_matrix.shape))
             if len(obs.shape) == 1 or len(obs.shape) == 3:
                 obs = obs.unsqueeze(0)  # Make a batch
             mtobs = MTObs(env_obs=obs, task_obs=env_index, task_info=task_info)
@@ -568,6 +572,8 @@ class Agent(AbstractAgent):
             batch = replay_buffer.sample(buffer_index_to_sample)
 
 
+        # print('AGENT.UPDATE: batch.env_obs.shape: {}'.format(batch.env_obs.shape))
+
         # print("Replay buffer obs sample: ", batch.env_obs.shape)
         # print("Replay buffer next obs sample: ", batch.next_env_obs.shape)
 
@@ -576,7 +582,8 @@ class Agent(AbstractAgent):
             self.task_encoder_optimizer.zero_grad()
             # print('batch.task_obs.shape: {}'.format(torch.squeeze(batch.task_obs).shape))
             task_encoding = self.get_task_encoding(
-                env_index=torch.squeeze(batch.task_obs), # There was unsqueeze(1) here
+                # env_index=torch.squeeze(batch.task_obs),
+                env_index=batch.task_obs.squeeze(1),
                 disable_grad=False,
                 modes=["train"],
             )

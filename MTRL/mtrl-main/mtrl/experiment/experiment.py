@@ -99,6 +99,7 @@ class Experiment(checkpointable.Checkpointable):
 
         should_resume_experiment = self.config.experiment.should_resume
 
+        # print('EXPERIMENT: should_resume_experiment: {}'.format(should_resume_experiment))
         if should_resume_experiment:
             self.start_step = self.agent.load_latest_step(model_dir=self.model_dir)
             self.replay_buffer.load(save_dir=self.buffer_dir)

@@ -200,12 +200,9 @@ class MTRL_AttModel(nn.Module):
     def forward(self, x, mask):
         v = torch.tanh(self.fcv(x))
         q = torch.tanh(self.fcq(x))
-        # print('x.shape: {}'.format(x.shape))
-        # print('q.shape: {}'.format(q.shape))
         k = torch.transpose(torch.tanh(self.fck(x)),-1,-2)
-        # print('k.shape: {}'.format(k.shape))
+
         att = F.softmax(torch.mul(torch.matmul(q,k), mask) - 9e15*(1 - mask), dim=-1)
-        # Note: Order of applying adj matrix is different than that in paper. Don't get confused!
         out = torch.matmul(att,v)
         return out
 
@@ -235,8 +232,16 @@ class MTRL_DGN(nn.Module):
         self.mlp = build_mlp((self.attention_num_layers+1)*hidden_dim, hidden_dim, output_dim, mlp_num_layers)
         # Q Net remains same for MTRL
 
-    def forward(self, x, mask):
+    def forward(self, x, mask): # Shape(x): (BATCH_SIZE, HIDDEN_DIM(OBS_EMB_SHAPE)) -> (BATCH_SIZE, NUM_TASKS, HIDDEN_DIM(OBS_EMB_SHAPE))
         # h1 = self.encoder(x)
+        # print('MTRL_DGN.FORWARD: x.shape: {}'.format(x.shape))
+        # print('MTRL_DGN.FORWARD: mask.shape: {}'.format(mask.shape))
+
+        num_tasks = mask.shape[-1] # get the number of tasks
+        x = torch.unsqueeze(x, 1) # add a new dimension for tasks
+        x = x.expand(-1, num_tasks, -1) # expand the second dimension with num_tasks
+
+        # print('MTRL_DGN.FORWARD INPUT EXPANDED: x.shape: {}'.format(x.shape))
 
         attention_heads = []
         attention_head = x
@@ -250,14 +255,16 @@ class MTRL_DGN(nn.Module):
         output = torch.cat(attention_heads, dim=-1)
         # print('cat.shape: {}'.format(output.shape))
         output = self.mlp(torch.cat(attention_heads, dim=-1))
-        # print('output.shape: {}'.format(output.shape))
 
         # h1 = self.att_1(x, mask)
         # h2 = self.att_2(h1, mask) 
         
         # output = torch.cat((x,h1,h2), dim=-1)
         # op = self.mlp(h4)
-        return output
+
+        # NOTE: Since we expanded the values we can just get the first value
+        # TODO: MAKE SURE THAT THIS IS AN OKAY APPROACH!!!! DISCUSS WITH ANUGYA!!!!
+        return output[:,0,:] 
     
     def __iter__(self):
         return iter(self._modules.values())

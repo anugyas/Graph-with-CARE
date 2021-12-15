@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=graph_with_care
+#SBATCH --job-name=gwc_feedforward
 #SBATCH --open-mode=append
 #SBATCH --output=./%j_%x.out
 #SBATCH --error=./%j_%x.err
 #SBATCH --export=ALL
-#SBATCH --time=5:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gres=gpu:2
 #SBATCH --mem=32G
 #SBATCH -c 2
@@ -17,7 +17,7 @@ conda activate hw2_drq
 
 export PYTHONPATH=$SCRATCH/.local/lib/python3.9/site-packages/
 
-python3.9 main.py \
+python3.9 -u main.py \
 setup=metaworld \
 env=metaworld-mt10 \
 agent=state_sac \
@@ -30,6 +30,8 @@ agent.multitask.should_use_disentangled_alpha=True \
 agent.multitask.should_use_task_encoder=True \
 agent.encoder.type_to_select=feedforward \
 agent.multitask.should_use_multi_head_policy=False \
+agent.encoder.moe.task_id_to_encoder_id_cfg.mode=attention \
+agent.encoder.moe.num_experts=4 \
 agent.multitask.task_encoder_cfg.model_cfg.pretrained_embedding_cfg.should_use=True
 
 

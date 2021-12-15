@@ -206,6 +206,7 @@ class Experiment(experiment.Experiment):
                 )  # (num_envs, action_dim)
 
             else:
+                # print('step > exp_config.init_steps')
                 with agent_utils.eval_mode(self.agent):
                     # multitask_obs = {"env_obs": obs, "task_obs": env_indices}
                     action = self.agent.sample_action(
@@ -214,6 +215,7 @@ class Experiment(experiment.Experiment):
                             train_mode,
                         ],
                     )  # (num_envs, action_dim)
+                    # print('MULTITASK: action.shape: {}'.format(action.shape))
 
             # Calculate the adjacency matrix of the current obs
             with torch.no_grad():
@@ -267,31 +269,31 @@ class Experiment(experiment.Experiment):
                 success += np.asarray([x["success"] for x in info])
 
             # allow infinite bootstrap
-            # for index, env_index in enumerate(env_indices):
-            #     done_bool = (
-            #         0
-            #         if episode_step[index] + 1 == self.max_episode_steps
-            #         else float(done[index])
-            #     )
-            #     if index not in self.envs_to_exclude_during_training:
-            #         self.replay_buffer.add(
-            #             multitask_obs["env_obs"][index],
-            #             action[index],
-            #             reward[index],
-            #             curr_adj[index],
-            #             next_multitask_obs["env_obs"][index],
-            #             next_adj[index],
-            #             done_bool,
-            #             task_obs=env_index,
-            #         )
-            # print('*done.shape: {}'.format(*(done.shape)))
-            done_bool = np.empty(*(done.shape))
             for index, env_index in enumerate(env_indices):
-                done_bool[index] = (
+                done_bool = (
                     0
                     if episode_step[index] + 1 == self.max_episode_steps
                     else float(done[index])
                 )
+                if index not in self.envs_to_exclude_during_training:
+                    self.replay_buffer.add(
+                        multitask_obs["env_obs"][index],
+                        action[index],
+                        reward[index],
+                        curr_adj,
+                        next_multitask_obs["env_obs"][index],
+                        next_adj,
+                        done_bool,
+                        task_obs=env_index,
+                    )
+            # print('*done.shape: {}'.format(*(done.shape)))
+            # done_bool = np.empty(*(done.shape))
+            # for index, env_index in enumerate(env_indices):
+            #     done_bool[index] = (
+            #         0
+            #         if episode_step[index] + 1 == self.max_episode_steps
+            #         else float(done[index])
+            #     )
 
             # print('multitask_obs["env_obs"].shape: {}'.format(multitask_obs["env_obs"].shape))
             # print('reward.shape to add: {}'.format(reward.shape))
@@ -300,16 +302,16 @@ class Experiment(experiment.Experiment):
             # print('done_bool: {}'.format(done_bool))
             # print('not done_bool: {}'.format(1 - done_bool))
             
-            self.replay_buffer.add(
-                multitask_obs["env_obs"],
-                action,
-                np.expand_dims(reward, axis=-1),
-                curr_adj,
-                next_multitask_obs["env_obs"],
-                next_adj,
-                np.expand_dims(done_bool, axis=-1),
-                np.expand_dims(env_indices, axis=-1), # TODO: delete this at some point this will be not needed
-            )
+            # self.replay_buffer.add(
+            #     multitask_obs["env_obs"],
+            #     action,
+            #     np.expand_dims(reward, axis=-1),
+            #     curr_adj,
+            #     next_multitask_obs["env_obs"],
+            #     next_adj,
+            #     np.expand_dims(done_bool, axis=-1),
+            #     np.expand_dims(env_indices, axis=-1), # TODO: delete this at some point this will be not needed
+            # )
 
             multitask_obs = next_multitask_obs
             episode_step += 1

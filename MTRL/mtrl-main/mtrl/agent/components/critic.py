@@ -595,7 +595,8 @@ class GCCritic(base_component.Component):
         return agent_utils.GCModel(
             input_dim=obs_dim + action_shape[0],
             hidden_dim=hidden_dim,
-            output_dim=action_shape[0],
+            # output_dim=action_shape[0],
+            output_dim=1,
             att_num_layers=4,
             mlp_num_layers=2,
             trunk_num_layers=num_layers,
@@ -655,9 +656,10 @@ class GCCritic(base_component.Component):
             )
             obs = self.encode(mtobs=temp_mtobs, detach=detach_encoder)
 
+        # print('obs.shape: {}, action.shape: {}'.format(obs.shape, action.shape))
         assert obs.size(0) == action.size(0)
 
-        # print('obs.shape: {}, action.shape: {}'.format(obs.shape, action.shape))
+        # print('CRITIC.FORWARD: obs.shape: {}, action.shape: {}'.format(obs.shape, action.shape))
         obs_action = torch.cat([obs, action], dim=-1)
         mtobs_for_q = MTObs(
             env_obs=obs_action,

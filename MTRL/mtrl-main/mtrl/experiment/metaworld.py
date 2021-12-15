@@ -90,6 +90,9 @@ class Experiment(multitask.Experiment):
             step (int): step for tracking the training of the agent.
             episode (int): episode for tracking the training of the agent.
         """
+
+        # print('METAWORLD. EVALUATE_VEC_ENV_OF_TASKS:')
+
         episode_step = 0
         for mode in self.eval_modes_to_env_ids:
             self.logger.log(f"{mode}/episode", episode, step)
@@ -107,11 +110,16 @@ class Experiment(multitask.Experiment):
                 action = agent.select_action(
                     multitask_obs=multitask_obs, modes=["eval"]
                 )
+            # print('METAWORLD: action: {}'.format(action.shape))
             multitask_obs, reward, done, info = vec_env.step(action)
+            # print('METAWORLD: multitask_obs: {}, reward: {}'.format(
+            #     type(multitask_obs), reward.shape
+            # ))
             # print("MTOBS STEP SHAPE: ", multitask_obs)
             # print('mtobs in evaluate_vec_env_of_tasks: {}'.format(multitask_obs))
             # print('reward in evaluate_vec_env_of_tasks: {}'.format(reward))
             success += np.asarray([x["success"] for x in info])
+            # print('METAWORLD: mask.shape: {}, done.shape: {}'.format(mask.shape, done.shape))
             mask = mask * (1 - done.astype(int))
             episode_reward += reward * mask
             # print('reward: {}'.format(reward))

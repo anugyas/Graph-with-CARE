@@ -80,4 +80,5 @@ class TaskEncoder(base_component.Component):
         self.trunk.apply(agent_utils.weight_init)
 
     def forward(self, env_index: TensorType) -> TensorType:
+        # print('in TASK_ENCODER.FORWARD')
         return self.trunk(self.embedding(env_index))

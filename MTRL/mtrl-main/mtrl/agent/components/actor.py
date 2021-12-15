@@ -500,6 +500,8 @@ class GCActor(BaseActor): # Graph with CARE actor
             self.should_condition_encoder_on_task_info = False
             self.should_concatenate_task_info_with_encoder = False
 
+        # print('ACTOR: env_obs_shape: {}'.format(env_obs_shape))
+
         self.encoder = self._make_encoder(
             env_obs_shape=env_obs_shape,
             encoder_cfg=encoder_cfg,
@@ -607,26 +609,6 @@ class GCActor(BaseActor): # Graph with CARE actor
             # SoftModularizedMLP are subtypes of ModelType.
         return trunk
 
-    def _make_attention(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        num_layers: int,
-    ) -> ModelType:
-
-        attention_block = agent_utils.MTRL_DGN(input_dim, hidden_dim, output_dim, num_layers)
-        # if num_layers == 0:
-        #     mods = [nn.Linear(input_dim, output_dim)]
-        # else:
-        #     mods = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
-        #     for _ in range(num_layers - 1):
-        #         mods += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
-        #     mods.append(nn.Linear(hidden_dim, output_dim))
-        # return mods
-
-        return attention_block
-
     def make_model(
         self,
         action_shape: List[int],
@@ -648,6 +630,8 @@ class GCActor(BaseActor): # Graph with CARE actor
             ModelType: model for the actor.
         """
         model_output_dim = 2 * action_shape[0]
+        # print('ACTOR model_output_dim: {}'.format(model_output_dim))
+        # print('ACTOR action_shape: {}'.format(action_shape))
         if encoder_cfg.type in ["moe", "fmoe"]:
             model_input_dim = encoder_cfg.encoder_cfg.feature_dim
         else:
@@ -748,22 +732,39 @@ class GCActor(BaseActor): # Graph with CARE actor
             obs = obs.to('cuda')
             # print("OBS SHAPE: ", obs.shape)
             mu_and_log_std = self.model(obs, adj)
+            # print('ACTOR.FORWARD: mu_and_log_std.shape: {}'.format(mu_and_log_std.shape))
         if self.should_use_multi_head_policy:
             policy_mask = self.moe_masks.get_mask(task_info=task_info)
             sum_of_masked_mu_and_log_std = (mu_and_log_std * policy_mask).sum(dim=0)
             sum_of_policy_count = policy_mask.sum(dim=0)
             mu_and_log_std = sum_of_masked_mu_and_log_std / sum_of_policy_count
         mu, log_std = mu_and_log_std.chunk(2, dim=-1)
+        # print('ACTOR.FORWARD: mu: {}, log_std: {}'.format(
+        #     mu.shape, log_std.shape
+        # ))
         # constrain log_std inside [log_std_min, log_std_max]
         log_std = torch.tanh(log_std)
         log_std_min, log_std_max = self.log_std_bounds
         log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
+        # print('ACTOR.FORWARD: log_std afterwards: {}'.format(log_std.shape))
+
 
         std = log_std.exp()
         noise = torch.randn_like(mu)
+        # print('mu.shape: {}, noise.shape: {}, std.shape: {}'.format(
+        #     mu.shape, noise.shape, std.shape
+        # ))
         pi = mu + noise * std
         log_pi = _gaussian_logprob(noise, log_std)
 
+        # print('BEFORE RETURN: mu.shape: {}, pi.shape: {}, log_pi.shape: {}'.format(
+        #     mu.shape, pi.shape, log_pi.shape
+        # ))
+
         mu, pi, log_pi = _squash(mu, pi, log_pi)
+
+        # print('BEFORE RETURN: mu.shape: {}, pi.shape: {}'.format(
+        #     mu.shape, pi.shape
+        # ))
 
         return mu, pi, log_pi, log_std
