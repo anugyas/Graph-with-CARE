@@ -33,11 +33,11 @@ from torch.utils import tensorboard as tb
 from agent.sac import SACAgent
 
 
-GRID_DIM = 50  # TODO: Tune this
-NUM_TASKS = 10  # TODO: Tune this
+GRID_DIM = 5  # TODO: Tune this
+NUM_TASKS = 5  # TODO: Tune this
 NUM_ATTENTION_HEADS = 5
 ADJ_THRESHOLD = GRID_DIM / 4
-WAIT_TILL_ALL_TASKS_DONE = False
+WAIT_TILL_ALL_TASKS_DONE = True
 USE_OBS_DIST = False
 EVAL_STEPS = 10000
 MAX_EVAL_WAIT = 1000000
@@ -72,10 +72,10 @@ class Workspace(object):
                               init_temperature=0.1,
                               alpha_lr=1e-4,
                               alpha_betas=[0.9, 0.999],
-                              actor_lr=1e-4,
+                              actor_lr=5e-5,
                               actor_betas=[0.9, 0.999],
                               actor_update_frequency=1,
-                              critic_lr=1e-4,
+                              critic_lr=5e-5,
                               critic_betas=[0.9, 0.999],
                               critic_tau=0.005,
                               critic_target_update_frequency=2,
